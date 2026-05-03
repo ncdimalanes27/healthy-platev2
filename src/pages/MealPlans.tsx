@@ -58,11 +58,26 @@ function DayCard({ day }: { day: MealPlanDay }) {
 
 export default function MealPlans() {
   const { currentUser, getProfile, saveMealPlan, getMealPlans } = useStore();
-  const profile = getProfile(currentUser?.id || '');
-  const savedPlans = getMealPlans(currentUser?.id || '');
+  const [profile, setProfile] = useState(null);
+  const [savedPlans, setSavedPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (currentUser?.id) {
+        const [userProfile, plans] = await Promise.all([
+          getProfile(currentUser.id),
+          getMealPlans(currentUser.id)
+        ]);
+        setProfile(userProfile);
+        setSavedPlans(plans);
+      }
+      setLoading(false);
+    };
+    loadData();
+  }, [currentUser?.id, getProfile, getMealPlans]);
 
   const [activePlan, setActivePlan] = useState<MealPlan | null>(null);
-  const [loading, setLoading] = useState(false);
   const [customCals, setCustomCals] = useState('');
   const [selectedCondition] = useState<HealthCondition | ''>('');
   const [showShoppingList, setShowShoppingList] = useState(false);
@@ -82,10 +97,15 @@ export default function MealPlans() {
     }, 600);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!activePlan) return;
-    saveMealPlan(currentUser!.id, activePlan);
-    alert('Meal plan saved!');
+    const success = await saveMealPlan(currentUser!.id, activePlan);
+    if (success) {
+      alert('Meal plan saved!');
+      // Reload saved plans
+      const plans = await getMealPlans(currentUser!.id);
+      setSavedPlans(plans);
+    }
   };
 
   const shoppingList = activePlan ? generateShoppingList(activePlan) : [];

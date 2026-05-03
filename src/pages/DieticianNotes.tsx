@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import type { DieticianNote } from '../types/index';
+import type { User, HealthProfile, DailyLog, DieticianNote } from '../types/index';
 import { Send, Trash2, Edit2, X, AlertTriangle, TrendingUp, MessageSquare, Star, Check } from 'lucide-react';
 
 const categories: { value: DieticianNote['category']; label: string; color: string; bg: string; icon: any }[] = [
@@ -12,9 +12,23 @@ const categories: { value: DieticianNote['category']; label: string; color: stri
 
 export default function DieticianNotes() {
   const { currentUser, getAllPatients, getNotesForPatient, addNote, deleteNote, updateNote } = useStore();
-  const patients = getAllPatients();
+  const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
+  const [notes, setNotes] = useState<DieticianNote[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [selectedPatient, setSelectedPatient] = useState(patients[0]?.user.id || '');
+  useEffect(() => {
+    const loadData = async () => {
+      const allPatients = await getAllPatients();
+      setPatients(allPatients);
+      if (allPatients.length > 0 && !selectedPatient) {
+        setSelectedPatient(allPatients[0].user.id);
+      }
+      setLoading(false);
+    };
+    loadData();
+  }, [getAllPatients]);
+
+  const [selectedPatient, setSelectedPatient] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<DieticianNote['category']>('recommendation');
   const [sent, setSent] = useState(false);
@@ -22,21 +36,34 @@ export default function DieticianNotes() {
   const [editContent, setEditContent] = useState('');
   const [editCategory, setEditCategory] = useState<DieticianNote['category']>('general');
 
-  const notes = getNotesForPatient(selectedPatient);
+  useEffect(() => {
+    const loadNotes = async () => {
+      if (selectedPatient) {
+        const patientNotes = await getNotesForPatient(selectedPatient);
+        setNotes(patientNotes);
+      }
+    };
+    loadNotes();
+  }, [selectedPatient, getNotesForPatient]);
   const patient = patients.find((p) => p.user.id === selectedPatient);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!content.trim() || !currentUser) return;
-    addNote({
+    const success = await addNote({
       dieticianId: currentUser.id,
       dieticianName: currentUser.name,
       patientId: selectedPatient,
       content: content.trim(),
       category,
     });
-    setContent('');
-    setSent(true);
-    setTimeout(() => setSent(false), 2000);
+    if (success) {
+      setContent('');
+      setSent(true);
+      // Reload notes
+      const patientNotes = await getNotesForPatient(selectedPatient);
+      setNotes(patientNotes);
+      setTimeout(() => setSent(false), 2000);
+    }
   };
 
   const handleEdit = (note: DieticianNote) => {
@@ -45,16 +72,30 @@ export default function DieticianNotes() {
     setEditCategory(note.category);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editContent.trim() || !editingId) return;
-    updateNote(editingId, { content: editContent.trim(), category: editCategory });
-    setEditingId(null);
-    setEditContent('');
+    const success = await updateNote(editingId, { content: editContent.trim(), category: editCategory });
+    if (success) {
+      setEditingId(null);
+      setEditContent('');
+      // Reload notes
+      const patientNotes = await getNotesForPatient(selectedPatient);
+      setNotes(patientNotes);
+    }
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditContent('');
+  };
+
+  const handleDelete = async (noteId: string) => {
+    const success = await deleteNote(noteId);
+    if (success) {
+      // Reload notes
+      const patientNotes = await getNotesForPatient(selectedPatient);
+      setNotes(patientNotes);
+    }
   };
 
   const getCategoryStyle = (cat: DieticianNote['category']) =>
@@ -226,7 +267,7 @@ export default function DieticianNotes() {
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => deleteNote(note.id)}
+                                onClick={() => handleDelete(note.id)}
                                 className="text-gray-300 hover:text-red-500 transition-colors"
                                 title="Delete"
                               >

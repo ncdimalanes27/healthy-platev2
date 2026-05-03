@@ -229,21 +229,29 @@ export interface MealEntry {
   foodName: string;
   servings: number;
   calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   date: string;
 }
 
 export interface DailyLog {
+  id?: string; // Optional for new entries
+  user_id?: string; // Optional for new entries
   date: string;
   meals: MealEntry[];
-  totalCalories: number;
-  totalProtein: number;
-  totalCarbs: number;
-  totalFat: number;
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fat: number;
   weight?: number;
-  bloodSugar?: number;
-  bloodPressureSystolic?: number;
-  bloodPressureDiastolic?: number;
+  blood_sugar?: number;
+  blood_pressure_systolic?: number;
+  blood_pressure_diastolic?: number;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface MealPlan {

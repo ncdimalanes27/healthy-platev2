@@ -1,18 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { Users, FileText, TrendingUp, MessageSquare, ClipboardList } from 'lucide-react';
 
 export default function NutritionistDashboard() {
   const { currentUser, getAllPatients, getAssignedPlansByProfessional, getNotesForPatient } = useStore();
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
+  const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
+  const [myAssignments, setMyAssignments] = useState<AssignedMealPlan[]>([]);
+  const [recentNotes, setRecentNotes] = useState<{ patientName: string }[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const patients = getAllPatients();
-  const myAssignments = currentUser ? getAssignedPlansByProfessional(currentUser.id) : [];
-  
-  // Get recent notes from patients
-  const recentNotes = patients.slice(0, 3).flatMap(p => 
-    getNotesForPatient(p.user.id).slice(0, 1).map(n => ({ ...n, patientName: p.user.name }))
-  );
+  useEffect(() => {
+    const loadData = async () => {
+      const allPatients = await getAllPatients();
+      setPatients(allPatients);
+      
+      if (currentUser) {
+        const assignments = await getAssignedPlansByProfessional(currentUser.id);
+        setMyAssignments(assignments);
+      }
+      
+      // Get recent notes from patients
+      const notes = allPatients.slice(0, 3).flatMap(async (p) => {
+        const patientNotes = await getNotesForPatient(p.user.id);
+        return patientNotes.slice(0, 1).map(n => ({ ...n, patientName: p.user.name }));
+      });
+      const resolvedNotes = await Promise.all(notes);
+      setRecentNotes(resolvedNotes.flat());
+      
+      setLoading(false);
+    };
+    loadData();
+  }, [currentUser, getAllPatients, getAssignedPlansByProfessional, getNotesForPatient]);
 
   const stats = [
     { label: 'Total Patients', value: patients.length, icon: Users, color: 'bg-blue-500' },

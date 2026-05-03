@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { filipinoFoods, foodCategories, budgetFoods } from '../data/foods';
 import type { FoodItem, MealEntry } from '../types';
@@ -24,7 +24,19 @@ const categoryEmoji: Record<string, string> = {
 
 export default function HealthData() {
   const { currentUser, addMealEntry, getTodayLog } = useStore();
-  const todayLog = getTodayLog(currentUser?.id || '');
+  const [todayLog, setTodayLog] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadTodayLog = async () => {
+      if (currentUser?.id) {
+        const log = await getTodayLog(currentUser.id);
+        setTodayLog(log);
+      }
+      setLoading(false);
+    };
+    loadTodayLog();
+  }, [currentUser?.id, getTodayLog]);
 
   const [search, setSearch] = useState('');
   const [mealType, setMealType] = useState<typeof mealTypes[number]>('lunch');
@@ -43,19 +55,27 @@ export default function HealthData() {
     return matchSearch && matchCategory;
   }).slice(0, 40);
 
-  const handleAdd = (food: FoodItem) => {
+  const handleAdd = async (food: FoodItem) => {
     const entry: MealEntry = {
       id: `e${Date.now()}`,
       foodId: food.id,
       foodName: food.name,
       servings: 1,
       calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat,
       mealType,
       date: new Date().toISOString().split('T')[0],
     };
-    addMealEntry(currentUser!.id, entry);
-    setAdded(food.id);
-    setTimeout(() => setAdded(null), 1500);
+    const success = await addMealEntry(currentUser!.id, entry);
+    if (success) {
+      // Reload today's log
+      const log = await getTodayLog(currentUser!.id);
+      setTodayLog(log);
+      setAdded(food.id);
+      setTimeout(() => setAdded(null), 1500);
+    }
   };
 
   const handleCategoryClick = (cat: string) => {
@@ -80,10 +100,10 @@ export default function HealthData() {
           <p className="text-sm font-semibold text-green-800 mb-2">Today's Summary</p>
           <div className="grid grid-cols-4 gap-3">
             {[
-              { label: 'Calories', val: `${todayLog.totalCalories} kcal` },
+              { label: 'Calories', val: `${todayLog.total_calories} kcal` },
               { label: 'Meals', val: `${todayLog.meals.length} items` },
-              { label: 'Protein', val: `${todayLog.totalProtein}g` },
-              { label: 'Carbs', val: `${todayLog.totalCarbs}g` },
+              { label: 'Protein', val: `${todayLog.total_protein}g` },
+              { label: 'Carbs', val: `${todayLog.total_carbs}g` },
             ].map(({ label, val }) => (
               <div key={label} className="text-center">
                 <p className="text-lg font-bold text-green-700">{val}</p>

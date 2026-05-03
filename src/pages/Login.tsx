@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import { supabase } from '../lib/supabaseClient';
 import { Leaf, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
@@ -11,16 +12,16 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    const result = login(email, password);
+
+    const result = await login(email, password);
     if (!result.success) {
       setError(result.error || 'Login failed');
       return;
     }
-    
+
     const user = useStore.getState().currentUser;
     if (user?.role === 'admin') {
       navigate('/admin');
@@ -33,7 +34,24 @@ export default function Login() {
     }
   };
 
-  const demoLogin = (role: 'patient' | 'dietician' | 'nutritionist' | 'admin') => {
+  const handleGoogleSignIn = async () => {
+    setError('');
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    if (data.url) {
+      window.location.href = data.url;
+    }
+  };
+
+  const demoLogin = async (role: 'patient' | 'dietician' | 'nutritionist' | 'admin') => {
     const credentials: Record<string, { email: string; password: string }> = {
       patient: { email: 'patient@demo.com', password: 'patient123' },
       dietician: { email: 'dietician@demo.com', password: 'dietician123' },
@@ -41,7 +59,7 @@ export default function Login() {
       admin: { email: 'admin@demo.com', password: 'admin123' },
     };
     
-    const result = login(credentials[role].email, credentials[role].password);
+    const result = await login(credentials[role].email, credentials[role].password);
     if (result.success) {
       if (role === 'admin') navigate('/admin');
       else if (role === 'nutritionist') navigate('/nutritionist');
@@ -110,6 +128,15 @@ export default function Login() {
               Sign In
             </button>
           </form>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            className="mt-4 w-full border border-gray-200 bg-white text-gray-700 hover:bg-slate-50 font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-3"
+          >
+            <img src="https://www.svgrepo.com/show/452224/google.svg" alt="Google logo" className="w-5 h-5" />
+            Continue with Google
+          </button>
 
           <div className="mt-6">
             <p className="text-xs text-center text-gray-400 mb-3">— Quick Demo Access —</p>

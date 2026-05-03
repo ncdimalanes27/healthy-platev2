@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import Layout from './components/layout/Layout';
@@ -65,8 +66,20 @@ function getDefaultDashboard(role: string): string {
 }
 
 export default function App() {
-  const { currentUser } = useStore();
-  
+  const { currentUser, authLoading } = useStore();
+
+  useEffect(() => {
+    useStore.getState().initializeAuth();
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-gray-700">
+        <p className="text-base font-medium">Restoring session...</p>
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>

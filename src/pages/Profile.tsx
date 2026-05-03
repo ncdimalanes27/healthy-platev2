@@ -102,7 +102,8 @@ const conditionColors: Record<string, string> = {
 
 export default function Profile() {
   const { currentUser, getProfile, saveProfile } = useStore();
-  const existing = getProfile(currentUser?.id || '');
+  const [existing, setExisting] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState<Omit<HealthProfile, 'userId'>>({
     age: 25,
@@ -117,11 +118,19 @@ export default function Profile() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (existing) {
-      const { userId, ...rest } = existing;
-      setForm(rest);
-    }
-  }, []);
+    const loadProfile = async () => {
+      if (currentUser?.id) {
+        const profile = await getProfile(currentUser.id);
+        if (profile) {
+          const { userId, ...rest } = profile;
+          setForm(rest);
+          setExisting(profile);
+        }
+      }
+      setLoading(false);
+    };
+    loadProfile();
+  }, [currentUser?.id, getProfile]);
 
   const toggleItem = (list: 'healthConditions' | 'allergies', item: string) => {
     setForm((prev) => {
@@ -133,10 +142,12 @@ export default function Profile() {
     });
   };
 
-  const handleSave = () => {
-    saveProfile({ ...form, userId: currentUser!.id });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async () => {
+    const success = await saveProfile({ ...form, userId: currentUser!.id });
+    if (success) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    }
   };
 
   const inputClass = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500';

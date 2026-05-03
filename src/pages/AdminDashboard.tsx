@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { Users, Shield, Settings, BarChart3, UserCog, Trash2, Edit, Plus, X } from 'lucide-react';
-import type { User } from '../types/index';
+import type { User, HealthProfile, DailyLog } from '../types/index';
 
 interface EditUserModalProps {
   user: User;
@@ -17,11 +17,11 @@ function EditUserModal({ user, onClose, onSave, onSavePassword }: EditUserModalP
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(user.id, { name, email, role });
+    await onSave(user.id, { name, email, role });
     if (password.trim()) {
-      onSavePassword(user.id, password);
+      await onSavePassword(user.id, password);
     }
     onClose();
   };
@@ -112,20 +112,49 @@ function EditUserModal({ user, onClose, onSave, onSavePassword }: EditUserModalP
 }
 
 export default function AdminDashboard() {
-  const { users, getAllPatients, getAllProfessionals, getAllAdmins, deleteUser, updateUser, updateUserPassword } = useStore();
+  const { getAllPatients, getAllProfessionals, getAllAdmins, deleteUser, updateUser, updateUserPassword } = useStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings'>('overview');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
+  const [professionals, setProfessionals] = useState<User[]>([]);
+  const [admins, setAdmins] = useState<User[]>([]);
+  const allUsers = React.useMemo(() => [
+    ...patients.map(p => ({ ...p.user, role: 'patient' as const })),
+    ...professionals.map(p => ({ ...p, role: 'dietician' as const })),
+    ...admins.map(a => ({ ...a, role: 'admin' as const }))
+  ], [patients, professionals, admins]);
 
-  const patients = getAllPatients();
-  const professionals = getAllProfessionals();
-  const admins = getAllAdmins();
+  useEffect(() => {
+    const loadData = async () => {
+      const allPatients = await getAllPatients();
+      const allProfessionals = await getAllProfessionals();
+      const allAdmins = await getAllAdmins();
+      setPatients(allPatients);
+      setProfessionals(allProfessionals);
+      setAdmins(allAdmins);
+    };
+    loadData();
+  }, [getAllPatients, getAllProfessionals, getAllAdmins]);
 
   const stats = [
-    { label: 'Total Users', value: users.length, icon: Users, color: 'bg-blue-500' },
+    { label: 'Total Users', value: patients.length + professionals.length + admins.length, icon: Users, color: 'bg-blue-500' },
     { label: 'Patients', value: patients.length, icon: UserCog, color: 'bg-green-500' },
     { label: 'Professionals', value: professionals.length + admins.length, icon: Shield, color: 'bg-purple-500' },
     { label: 'Admins', value: admins.length, icon: Settings, color: 'bg-orange-500' },
   ];
+
+  const handleDeleteUser = async (userId: string) => {
+    const success = await deleteUser(userId);
+    if (success) {
+      // Reload data
+      const allPatients = await getAllPatients();
+      const allProfessionals = await getAllProfessionals();
+      const allAdmins = await getAllAdmins();
+      setPatients(allPatients);
+      setProfessionals(allProfessionals);
+      setAdmins(allAdmins);
+    }
+  };
 
   const roleColors: Record<string, string> = {
     patient: 'bg-green-100 text-green-700',
@@ -191,8 +220,8 @@ export default function AdminDashboard() {
                   <h4 className="font-medium text-gray-700 mb-3">User Distribution</h4>
                   <div className="space-y-2">
                     {Object.entries(roleColors).map(([role, color]) => {
-                      const count = users.filter(u => u.role === role).length;
-                      const percentage = ((count / users.length) * 100).toFixed(1);
+                      const count = allUsers.filter(u => u.role === role).length;
+                      const percentage = ((count / allUsers.length) * 100).toFixed(1);
                       return (
                         <div key={role} className="flex items-center justify-between">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${color}`}>
@@ -234,7 +263,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((user) => (
+                    {allUsers.map((user) => (
                       <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
@@ -270,7 +299,7 @@ export default function AdminDashboard() {
                               className="p-1 text-gray-400 hover:text-red-600"
                               onClick={() => {
                                 if (confirm('Are you sure you want to delete this user?')) {
-                                  deleteUser(user.id);
+                                  handleDeleteUser(user.id);
                                 }
                               }}
                             >

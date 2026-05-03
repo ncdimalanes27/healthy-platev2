@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { calculateBMI, getBMICategory, calculateTargetCalories } from '../utils/calculations';
-import type { HealthCondition } from '../types';
+import type { User, HealthProfile, DailyLog } from '../types';
 import { 
   Users, TrendingUp, AlertCircle, ChevronDown, ChevronUp, 
   Target, FileText, MessageSquare, ClipboardList,
@@ -12,7 +12,7 @@ import {
 function calculateComplianceScore(patient: any): { score: number; level: string; color: string } {
   if (!patient.lastLog) return { score: 0, level: 'No Data', color: 'gray' };
   
-  const calories = patient.lastLog?.totalCalories || 0;
+  const calories = patient.lastLog?.total_calories || 0;
   const target = patient.profile ? calculateTargetCalories(patient.profile) : 2000;
   const ratio = calories / target;
   
@@ -40,7 +40,7 @@ function getInterventions(patient: any): string[] {
     interventions.push('Set realistic weight loss targets (0.5kg/week)');
     interventions.push('Increase physical activity recommendation');
   }
-  if (!patient.lastLog?.totalCalories) {
+  if (!patient.lastLog?.total_calories) {
     interventions.push('Patient has not logged meals recently');
   }
   
@@ -88,7 +88,7 @@ function PatientRow({ patient }: { patient: any }) {
           {compliance.level}
         </div>
         <div className="text-right">
-          <p className="text-sm font-bold text-gray-700">{lastLog?.totalCalories ?? '--'} kcal</p>
+          <p className="text-sm font-bold text-gray-700">{lastLog?.total_calories ?? '--'} kcal</p>
           <p className="text-xs text-gray-400">Last logged</p>
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
@@ -198,9 +198,19 @@ function PatientRow({ patient }: { patient: any }) {
 
 export default function DieticianDashboard() {
   const { currentUser, getAllPatients } = useStore();
-  const patients = getAllPatients();
+  const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterCondition, setFilterCondition] = useState<HealthCondition | ''>('');
+
+  useEffect(() => {
+    const loadPatients = async () => {
+      const allPatients = await getAllPatients();
+      setPatients(allPatients);
+      setLoading(false);
+    };
+    loadPatients();
+  }, [getAllPatients]);
 
   const filtered = patients.filter(
     (p) =>
@@ -231,7 +241,7 @@ export default function DieticianDashboard() {
           { label: 'Total Patients', val: patients.length, icon: Users, color: 'bg-blue-500' },
           { label: 'With Conditions', val: withConditions.length, icon: AlertCircle, color: 'bg-amber-500' },
           { label: 'Needs Attention', val: needsAttention.length, icon: Target, color: 'bg-red-500' },
-          { label: 'Active Today', val: patients.filter((p) => p.lastLog?.totalCalories).length, icon: TrendingUp, color: 'bg-green-500' },
+          { label: 'Active Today', val: patients.filter((p) => p.lastLog?.total_calories).length, icon: TrendingUp, color: 'bg-green-500' },
         ].map(({ label, val, icon: Icon, color }) => (
           <div key={label} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-2">

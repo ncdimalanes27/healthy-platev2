@@ -25,27 +25,29 @@ export default function Register() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+    setMessage('');
+
     if (!form.name || !form.email || !form.password) {
       setError('All fields are required.');
       return;
     }
-    
+
     if (form.password !== form.confirmPassword) {
       setError('Passwords do not match.');
       return;
     }
-    
+
     if (form.password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
 
-    const result = register(
+    const result = await register(
       { 
         name: form.name, 
         email: form.email, 
@@ -55,12 +57,17 @@ export default function Register() {
       }, 
       form.password
     );
-    
+
     if (!result.success) {
       setError(result.error || 'Registration failed');
       return;
     }
-    
+
+    if (result.message) {
+      setMessage(result.message);
+      return;
+    }
+
     const user = useStore.getState().currentUser;
     if (user?.role === 'admin') {
       navigate('/admin');
@@ -90,6 +97,7 @@ export default function Register() {
           <h2 className="text-xl font-semibold text-gray-800 mb-6">Register</h2>
 
           {error && <div className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>}
+          {message && <div className="bg-green-50 text-green-700 text-sm rounded-lg px-4 py-3 mb-4">{message}</div>}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

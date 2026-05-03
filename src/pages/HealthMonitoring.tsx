@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -8,30 +8,47 @@ import { Save } from 'lucide-react';
 
 export default function HealthMonitoring() {
   const { currentUser, getLogs, updateHealthMetrics } = useStore();
-  const logs = getLogs(currentUser?.id || '');
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadLogs = async () => {
+      if (currentUser?.id) {
+        const userLogs = await getLogs(currentUser.id);
+        setLogs(userLogs);
+      }
+      setLoading(false);
+    };
+    loadLogs();
+  }, [currentUser?.id, getLogs]);
 
   const [form, setForm] = useState({ weight: '', bloodSugar: '', systolic: '', diastolic: '' });
   const [saved, setSaved] = useState(false);
 
   const chartData = logs.slice(-14).map((log) => ({
     date: new Date(log.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
-    calories: log.totalCalories,
+    calories: log.total_calories,
     weight: log.weight,
-    bloodSugar: log.bloodSugar,
-    systolic: log.bloodPressureSystolic,
-    diastolic: log.bloodPressureDiastolic,
+    blood_sugar: log.blood_sugar,
+    systolic: log.blood_pressure_systolic,
+    diastolic: log.blood_pressure_diastolic,
   }));
 
-  const handleSave = () => {
-    updateHealthMetrics(currentUser!.id, {
+  const handleSave = async () => {
+    const success = await updateHealthMetrics(currentUser!.id, {
       weight: form.weight ? parseFloat(form.weight) : undefined,
-      bloodSugar: form.bloodSugar ? parseFloat(form.bloodSugar) : undefined,
-      bloodPressureSystolic: form.systolic ? parseFloat(form.systolic) : undefined,
-      bloodPressureDiastolic: form.diastolic ? parseFloat(form.diastolic) : undefined,
+      blood_sugar: form.bloodSugar ? parseFloat(form.bloodSugar) : undefined,
+      blood_pressure_systolic: form.systolic ? parseFloat(form.systolic) : undefined,
+      blood_pressure_diastolic: form.diastolic ? parseFloat(form.diastolic) : undefined,
     });
-    setSaved(true);
-    setForm({ weight: '', bloodSugar: '', systolic: '', diastolic: '' });
-    setTimeout(() => setSaved(false), 2000);
+    if (success) {
+      setSaved(true);
+      setForm({ weight: '', bloodSugar: '', systolic: '', diastolic: '' });
+      // Reload logs
+      const userLogs = await getLogs(currentUser!.id);
+      setLogs(userLogs);
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
   const inputClass = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500';

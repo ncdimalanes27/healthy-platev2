@@ -1,29 +1,53 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { calculateTargetCalories } from '../utils/calculations';
 import { ClipboardList, CheckCircle } from 'lucide-react';
+import type { User, HealthProfile, DailyLog, AssignedMealPlan } from '../types/index';
 
 export default function AssignMealPlan() {
   const { currentUser, getAllPatients, getProfile, assignMealPlan, getAssignedPlansForPatient } = useStore();
-  const patients = getAllPatients();
+  const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
+  const [profile, setProfile] = useState<HealthProfile | null>(null);
+  const [assignedPlans, setAssignedPlans] = useState<AssignedMealPlan[]>([]);
 
-  const [selectedPatient, setSelectedPatient] = useState(patients[0]?.user.id || '');
+  useEffect(() => {
+    const loadData = async () => {
+      const allPatients = await getAllPatients();
+      setPatients(allPatients);
+      if (allPatients.length > 0 && !selectedPatient) {
+        setSelectedPatient(allPatients[0].user.id);
+      }
+    };
+    loadData();
+  }, [getAllPatients]);
+
+  const [selectedPatient, setSelectedPatient] = useState('');
   const [planName, setPlanName] = useState('');
   const [targetCalories, setTargetCalories] = useState('');
   const [note, setNote] = useState('');
   const [assigned, setAssigned] = useState(false);
 
-  const patient = patients.find((p) => p.user.id === selectedPatient);
-  const profile = getProfile(selectedPatient);
-  const defaultTargetCals = profile ? calculateTargetCalories(profile) : 1800;
-  const assignedPlans = getAssignedPlansForPatient(selectedPatient);
+  useEffect(() => {
+    const loadPatientData = async () => {
+      if (selectedPatient) {
+        const patientProfile = await getProfile(selectedPatient);
+        setProfile(patientProfile);
+        const plans = await getAssignedPlansForPatient(selectedPatient);
+        setAssignedPlans(plans);
+      }
+    };
+    loadPatientData();
+  }, [selectedPatient, getProfile, getAssignedPlansForPatient]);
 
-  const handleAssign = () => {
+  const patient = patients.find((p) => p.user.id === selectedPatient);
+  const defaultTargetCals = profile ? calculateTargetCalories(profile) : 1800;
+
+  const handleAssign = async () => {
     if (!currentUser || !patient || !planName.trim()) return;
     
     const calories = targetCalories ? parseInt(targetCalories) : defaultTargetCals;
     
-    assignMealPlan({
+    const success = await assignMealPlan({
       mealPlanId: `manual-${Date.now()}`,
       mealPlanName: planName.trim(),
       patientId: selectedPatient,
@@ -33,11 +57,16 @@ export default function AssignMealPlan() {
       note: note.trim(),
     });
     
-    setPlanName('');
-    setTargetCalories('');
-    setNote('');
-    setAssigned(true);
-    setTimeout(() => setAssigned(false), 2500);
+    if (success) {
+      setPlanName('');
+      setTargetCalories('');
+      setNote('');
+      setAssigned(true);
+      // Reload assigned plans
+      const plans = await getAssignedPlansForPatient(selectedPatient);
+      setAssignedPlans(plans);
+      setTimeout(() => setAssigned(false), 2500);
+    }
   };
 
   return (

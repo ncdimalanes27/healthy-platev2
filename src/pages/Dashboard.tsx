@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { calculateTargetCalories, calculateBMI, getBMICategory } from '../utils/calculations';
 import { TrendingUp, Droplets, Scale, ChevronRight, Flame, Star, AlertTriangle, TrendingUp as ProgressIcon, MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import type { HealthProfile, DailyLog, DieticianNote } from '../types';
 
 function StatCard({ label, value, unit, color, icon: Icon }: any) {
   return (
@@ -23,12 +25,26 @@ function StatCard({ label, value, unit, color, icon: Icon }: any) {
 export default function Dashboard() {
   const { currentUser, getProfile, getTodayLog, getNotesForCurrentPatient } = useStore();
   const navigate = useNavigate();
-  const profile = getProfile(currentUser?.id || '');
-  const todayLog = getTodayLog(currentUser?.id || '');
-  const notes = getNotesForCurrentPatient();
+  const [profile, setProfile] = useState<HealthProfile | null>(null);
+  const [todayLog, setTodayLog] = useState<DailyLog | null>(null);
+  const [notes, setNotes] = useState<DieticianNote[]>([]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (currentUser?.id) {
+        const userProfile = await getProfile(currentUser.id);
+        const log = await getTodayLog(currentUser.id);
+        const userNotes = await getNotesForCurrentPatient();
+        setProfile(userProfile);
+        setTodayLog(log);
+        setNotes(userNotes);
+      }
+    };
+    loadData();
+  }, [currentUser?.id, getProfile, getTodayLog, getNotesForCurrentPatient]);
 
   const targetCals = profile ? calculateTargetCalories(profile) : 2000;
-  const consumed = todayLog?.totalCalories || 0;
+  const consumed = todayLog?.total_calories || 0;
   const remaining = targetCals - consumed;
   const progressPct = Math.min((consumed / targetCals) * 100, 100);
 
@@ -86,9 +102,9 @@ export default function Dashboard() {
           {/* Macro bars */}
           <div className="mt-4 space-y-2">
             {[
-              { label: 'Protein', val: todayLog?.totalProtein || 0, max: 120, color: 'bg-blue-500' },
-              { label: 'Carbs', val: todayLog?.totalCarbs || 0, max: 250, color: 'bg-amber-400' },
-              { label: 'Fat', val: todayLog?.totalFat || 0, max: 65, color: 'bg-pink-400' },
+              { label: 'Protein', val: todayLog?.total_protein || 0, max: 120, color: 'bg-blue-500' },
+              { label: 'Carbs', val: todayLog?.total_carbs || 0, max: 250, color: 'bg-amber-400' },
+              { label: 'Fat', val: todayLog?.total_fat || 0, max: 65, color: 'bg-pink-400' },
             ].map(({ label, val, max, color }) => (
               <div key={label} className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 w-12">{label}</span>
@@ -105,10 +121,10 @@ export default function Dashboard() {
         <div className="md:col-span-2 grid grid-cols-2 gap-4">
           <StatCard label="BMI" value={bmi || '--'} unit={bmiInfo?.label} color="bg-green-500" icon={Scale} />
           <StatCard label="Target Calories" value={targetCals} unit="kcal" color="bg-orange-400" icon={Flame} />
-          <StatCard label="Blood Sugar" value={todayLog?.bloodSugar || '--'} unit="mg/dL" color="bg-purple-500" icon={Droplets} />
+          <StatCard label="Blood Sugar" value={todayLog?.blood_sugar || '--'} unit="mg/dL" color="bg-purple-500" icon={Droplets} />
           <StatCard
             label="Blood Pressure"
-            value={todayLog?.bloodPressureSystolic ? `${todayLog.bloodPressureSystolic}/${todayLog.bloodPressureDiastolic}` : '--'}
+            value={todayLog?.blood_pressure_systolic ? `${todayLog.blood_pressure_systolic}/${todayLog.blood_pressure_diastolic}` : '--'}
             unit="mmHg"
             color="bg-red-400"
             icon={TrendingUp}
