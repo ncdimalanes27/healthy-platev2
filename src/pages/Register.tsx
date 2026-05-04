@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { Leaf, Eye, EyeOff } from 'lucide-react';
@@ -13,27 +13,76 @@ const roleLabels: Record<UserRole, { label: string; icon: string; desc: string }
 
 export default function Register() {
   const navigate = useNavigate();
-  const { register } = useStore();
+  const { currentUser, register, completeOAuthRegistration } = useStore();
   const [form, setForm] = useState({ 
-    name: '', 
-    email: '', 
-    password: '', 
+    name: currentUser?.name || '',
+    email: currentUser?.email || '',
+    password: '',
     confirmPassword: '',
-    role: 'patient' as UserRole,
-    phone: '',
-    address: ''
+    role: currentUser?.role || 'patient',
+    phone: currentUser?.phone || '',
+    address: currentUser?.address || ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (currentUser) {
+      setForm((prev) => ({
+        ...prev,
+        name: currentUser.name || prev.name,
+        email: currentUser.email || prev.email,
+        role: currentUser.role || prev.role,
+      }));
+    }
+  }, [currentUser]);
+
+  const isOAuthFlow = !!currentUser;
+
+  const isPhilippinePhone = (phone: string) => {
+    const digits = phone.replace(/\D/g, '');
+    return /^09\d{9}$/.test(digits) || /^639\d{9}$/.test(digits);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setMessage('');
 
-    if (!form.name || !form.email || !form.password) {
-      setError('All fields are required.');
+    if (!form.name || !form.email || !form.phone) {
+      setError('Name, email, and Philippine phone number are required.');
+      return;
+    }
+
+    if (!isPhilippinePhone(form.phone)) {
+      setError('Please enter a valid Philippine phone number (09xxxxxxxxx or 639xxxxxxxxx).');
+      return;
+    }
+
+    if (isOAuthFlow) {
+      const result = await completeOAuthRegistration({
+        name: form.name,
+        role: form.role,
+        phone: form.phone,
+        address: form.address || undefined,
+      });
+
+      if (!result.success) {
+        setError(result.error || 'Unable to complete registration.');
+        return;
+      }
+
+      const user = useStore.getState().currentUser;
+      if (user?.role === 'admin') navigate('/admin');
+      else if (user?.role === 'nutritionist') navigate('/nutritionist');
+      else if (user?.role === 'dietician') navigate('/dietician');
+      else navigate('/dashboard');
+      return;
+    }
+
+    if (!form.password || !form.confirmPassword) {
+      setError('Password and confirmation are required.');
       return;
     }
 
@@ -48,13 +97,13 @@ export default function Register() {
     }
 
     const result = await register(
-      { 
-        name: form.name, 
-        email: form.email, 
+      {
+        name: form.name,
+        email: form.email,
         role: form.role,
-        phone: form.phone || undefined,
-        address: form.address || undefined
-      }, 
+        phone: form.phone,
+        address: form.address || undefined,
+      },
       form.password
     );
 
@@ -94,7 +143,9 @@ export default function Register() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-green-100">
-          <h2 className="text-xl font-semibold text-gray-800 mb-6">Register</h2>
+          <h2 className="text-xl font-semibold text-gray-800 mb-6">
+            {isOAuthFlow ? 'Complete your Google signup' : 'Register'}
+          </h2>
 
           {error && <div className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>}
           {message && <div className="bg-green-50 text-green-700 text-sm rounded-lg px-4 py-3 mb-4">{message}</div>}
@@ -114,49 +165,54 @@ export default function Register() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
                 type="email"
+                readOnly={isOAuthFlow}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 ${isOAuthFlow ? 'bg-gray-100 cursor-not-allowed border-gray-200' : 'border-gray-200'}`}
                 placeholder="juan@example.com"
               />
             </div>
+            {isOAuthFlow ? null : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 pr-10"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={form.confirmPassword}
+                    onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </>
+            )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 pr-10"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="••••••••"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone (Optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone (Philippines only)</label>
               <input
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="0912 345 6789"
+                placeholder="09123456789 or 639123456789"
               />
             </div>
             <div>
@@ -183,7 +239,7 @@ export default function Register() {
               type="submit"
               className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors"
             >
-              Create Account
+              {isOAuthFlow ? 'Complete Signup' : 'Create Account'}
             </button>
           </form>
 

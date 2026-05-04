@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { generateMealPlan, generateShoppingList, calculateMacros, getBatchCookingTips } from '../utils/mealPlanGenerator';
 import { calculateTargetCalories } from '../utils/calculations';
-import type { MealPlan, MealPlanDay, HealthCondition } from '../types';
+import type { MealPlan, MealPlanDay, HealthCondition, HealthProfile } from '../types';
 import { Sparkles, ChevronDown, ChevronUp, Calendar, ShoppingCart, ChefHat, Info } from 'lucide-react';
 
 function MealCard({ foods, label }: { foods: any[]; label: string }) {
@@ -58,8 +58,8 @@ function DayCard({ day }: { day: MealPlanDay }) {
 
 export default function MealPlans() {
   const { currentUser, getProfile, saveMealPlan, getMealPlans } = useStore();
-  const [profile, setProfile] = useState(null);
-  const [savedPlans, setSavedPlans] = useState([]);
+  const [profile, setProfile] = useState<HealthProfile | null>(null);
+  const [savedPlans, setSavedPlans] = useState<MealPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

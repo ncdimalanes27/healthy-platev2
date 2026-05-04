@@ -102,7 +102,6 @@ const conditionColors: Record<string, string> = {
 
 export default function Profile() {
   const { currentUser, getProfile, saveProfile } = useStore();
-  const [existing, setExisting] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState<Omit<HealthProfile, 'userId'>>({
@@ -124,13 +123,18 @@ export default function Profile() {
         if (profile) {
           const { userId, ...rest } = profile;
           setForm(rest);
-          setExisting(profile);
         }
       }
       setLoading(false);
     };
     loadProfile();
   }, [currentUser?.id, getProfile]);
+
+  if (loading) {
+    return (
+      <div className="p-6 text-center text-gray-500">Loading profile...</div>
+    );
+  }
 
   const toggleItem = (list: 'healthConditions' | 'allergies', item: string) => {
     setForm((prev) => {

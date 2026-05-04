@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { calculateBMI, getBMICategory, calculateTargetCalories } from '../utils/calculations';
-import type { User, HealthProfile, DailyLog } from '../types';
+import type { User, HealthProfile, DailyLog, HealthCondition } from '../types';
 import { 
   Users, TrendingUp, AlertCircle, ChevronDown, ChevronUp, 
   Target, FileText, MessageSquare, ClipboardList,
@@ -211,6 +211,14 @@ export default function DieticianDashboard() {
     };
     loadPatients();
   }, [getAllPatients]);
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto text-center text-gray-500">
+        Loading patients...
+      </div>
+    );
+  }
 
   const filtered = patients.filter(
     (p) =>

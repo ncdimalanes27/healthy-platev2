@@ -175,7 +175,7 @@ export const db = {
     return data || [];
   },
 
-  async addNote(note: Omit<DieticianNote, 'id' | 'created_at' | 'updated_at'>): Promise<boolean> {
+  async addNote(note: Omit<DieticianNote, 'id' | 'createdAt'>): Promise<boolean> {
     const { error } = await supabase
       .from('dietician_notes')
       .insert({
@@ -257,7 +257,7 @@ export const db = {
     return data || [];
   },
 
-  async assignMealPlan(assignment: Omit<AssignedMealPlan, 'id' | 'assigned_at'>): Promise<boolean> {
+  async assignMealPlan(assignment: Omit<AssignedMealPlan, 'id' | 'assignedAt'>): Promise<boolean> {
     const { error } = await supabase
       .from('assigned_meal_plans')
       .insert(assignment);

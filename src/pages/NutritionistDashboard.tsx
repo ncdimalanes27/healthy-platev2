@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
+import type { User, HealthProfile, DailyLog, AssignedMealPlan, DieticianNote } from '../types';
 import { Users, FileText, TrendingUp, MessageSquare, ClipboardList } from 'lucide-react';
 
 export default function NutritionistDashboard() {
@@ -7,7 +8,7 @@ export default function NutritionistDashboard() {
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
   const [myAssignments, setMyAssignments] = useState<AssignedMealPlan[]>([]);
-  const [recentNotes, setRecentNotes] = useState<{ patientName: string }[]>([]);
+  const [recentNotes, setRecentNotes] = useState<Array<DieticianNote & { patientName: string }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +33,12 @@ export default function NutritionistDashboard() {
     };
     loadData();
   }, [currentUser, getAllPatients, getAssignedPlansByProfessional, getNotesForPatient]);
+
+  if (loading) {
+    return (
+      <div className="p-6 text-center text-gray-500">Loading dashboard...</div>
+    );
+  }
 
   const stats = [
     { label: 'Total Patients', value: patients.length, icon: Users, color: 'bg-blue-500' },

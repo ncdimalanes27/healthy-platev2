@@ -38,7 +38,7 @@ export default function Login() {
     setError('');
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: `${window.location.origin}/register` },
     });
 
     if (error) {
@@ -48,23 +48,6 @@ export default function Login() {
 
     if (data.url) {
       window.location.href = data.url;
-    }
-  };
-
-  const demoLogin = async (role: 'patient' | 'dietician' | 'nutritionist' | 'admin') => {
-    const credentials: Record<string, { email: string; password: string }> = {
-      patient: { email: 'patient@demo.com', password: 'patient123' },
-      dietician: { email: 'dietician@demo.com', password: 'dietician123' },
-      nutritionist: { email: 'nutritionist@demo.com', password: 'nutritionist123' },
-      admin: { email: 'admin@demo.com', password: 'admin123' },
-    };
-    
-    const result = await login(credentials[role].email, credentials[role].password);
-    if (result.success) {
-      if (role === 'admin') navigate('/admin');
-      else if (role === 'nutritionist') navigate('/nutritionist');
-      else if (role === 'dietician') navigate('/dietician');
-      else navigate('/dashboard');
     }
   };
 
@@ -137,36 +120,6 @@ export default function Login() {
             <img src="https://www.svgrepo.com/show/452224/google.svg" alt="Google logo" className="w-5 h-5" />
             Continue with Google
           </button>
-
-          <div className="mt-6">
-            <p className="text-xs text-center text-gray-400 mb-3">— Quick Demo Access —</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => demoLogin('patient')}
-                className="border-2 border-green-200 text-green-700 hover:bg-green-50 text-sm font-medium py-2 rounded-xl transition-colors"
-              >
-                👤 Patient
-              </button>
-              <button
-                onClick={() => demoLogin('dietician')}
-                className="border-2 border-blue-200 text-blue-700 hover:bg-blue-50 text-sm font-medium py-2 rounded-xl transition-colors"
-              >
-                🩺 Dietician
-              </button>
-              <button
-                onClick={() => demoLogin('nutritionist')}
-                className="border-2 border-purple-200 text-purple-700 hover:bg-purple-50 text-sm font-medium py-2 rounded-xl transition-colors"
-              >
-                🥗 Nutritionist
-              </button>
-              <button
-                onClick={() => demoLogin('admin')}
-                className="border-2 border-orange-200 text-orange-700 hover:bg-orange-50 text-sm font-medium py-2 rounded-xl transition-colors"
-              >
-                ⚙️ Admin
-              </button>
-            </div>
-          </div>
 
           <p className="text-center text-sm text-gray-500 mt-6">
             No account?{' '}

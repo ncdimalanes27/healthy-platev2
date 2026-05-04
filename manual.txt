@@ -1,0 +1,3 @@
+client id : 27623090136-madlu386f3i25gtflasc3ppnmsttub5a.apps.googleusercontent.com
+
+client secret: N09851052543ds

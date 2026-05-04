@@ -49,6 +49,7 @@ interface AppState {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   register: (user: Omit<User, 'id' | 'createdAt' | 'lastLogin'>, password: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  completeOAuthRegistration: (profileData: { name: string; role: User['role']; phone: string; address?: string }) => Promise<{ success: boolean; error?: string }>;
   refreshAuth: () => Promise<boolean>;
   hasRole: (requiredRoles: string[]) => boolean;
 
@@ -82,8 +83,6 @@ interface AppState {
   updateUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   deleteUser: (userId: string) => Promise<boolean>;
 }
-
-const today = () => new Date().toISOString().split('T')[0];
 
 export const useStore = create<AppState>()(
   persist(
@@ -154,7 +153,15 @@ export const useStore = create<AppState>()(
           },
         });
 
-        if (error) return { success: false, error: error.message };
+        if (error) {
+          const errText = error.message.toLowerCase();
+          const errorMessage = errText.includes('already registered')
+            ? errText.includes('phone') || errText.includes('number')
+              ? 'The phone number is already registered. Please use another number or sign in with Google.'
+              : 'The email is already registered. Please try another email or sign in with Google.'
+            : error.message;
+          return { success: false, error: errorMessage };
+        }
         if (!data.session) {
           return {
             success: true,
@@ -167,6 +174,36 @@ export const useStore = create<AppState>()(
           auth: createAuthState(data.session),
         });
         return { success: true };
+      },
+
+      completeOAuthRegistration: async (profileData) => {
+        const { data, error } = await supabase.auth.updateUser({
+          data: {
+            name: profileData.name,
+            role: profileData.role,
+            phone: profileData.phone,
+            address: profileData.address,
+          },
+        });
+
+        if (error) {
+          const errText = error.message.toLowerCase();
+          const errorMessage = errText.includes('already registered')
+            ? errText.includes('phone') || errText.includes('number')
+              ? 'The phone number is already registered. Please use another number or sign in with Google.'
+              : 'The email is already registered. Please try another email or sign in with Google.'
+            : error.message;
+          return { success: false, error: errorMessage };
+        }
+
+        if (data.user) {
+          set({
+            currentUser: mapSupabaseUser(data.user),
+          });
+          return { success: true };
+        }
+
+        return { success: false, error: 'Unable to update account details.' };
       },
 
       refreshAuth: async () => {
@@ -265,7 +302,9 @@ export const useStore = create<AppState>()(
     return await db.updateUser(userId, data);
   },
 
-  updateUserPassword: async (userId, newPassword) => {
+  updateUserPassword: async (_userId, _newPassword) => {
+    void _userId;
+    void _newPassword;
     // Note: Password updates should be handled through Supabase auth
     // This is a placeholder for admin password reset functionality
     console.warn('Password updates should be handled through Supabase auth admin API');

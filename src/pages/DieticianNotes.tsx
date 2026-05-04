@@ -14,7 +14,6 @@ export default function DieticianNotes() {
   const { currentUser, getAllPatients, getNotesForPatient, addNote, deleteNote, updateNote } = useStore();
   const [patients, setPatients] = useState<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]>([]);
   const [notes, setNotes] = useState<DieticianNote[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
@@ -23,7 +22,6 @@ export default function DieticianNotes() {
       if (allPatients.length > 0 && !selectedPatient) {
         setSelectedPatient(allPatients[0].user.id);
       }
-      setLoading(false);
     };
     loadData();
   }, [getAllPatients]);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { filipinoFoods, foodCategories, budgetFoods } from '../data/foods';
-import type { FoodItem, MealEntry } from '../types';
+import type { FoodItem, MealEntry, DailyLog } from '../types';
 import { Search, Plus, CheckCircle, Wallet } from 'lucide-react';
 
 const mealTypes = ['breakfast', 'lunch', 'dinner', 'snack'] as const;
@@ -24,7 +24,7 @@ const categoryEmoji: Record<string, string> = {
 
 export default function HealthData() {
   const { currentUser, addMealEntry, getTodayLog } = useStore();
-  const [todayLog, setTodayLog] = useState(null);
+  const [todayLog, setTodayLog] = useState<DailyLog | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,6 +37,14 @@ export default function HealthData() {
     };
     loadTodayLog();
   }, [currentUser?.id, getTodayLog]);
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto text-center text-gray-500">
+        Loading today's log...
+      </div>
+    );
+  }
 
   const [search, setSearch] = useState('');
   const [mealType, setMealType] = useState<typeof mealTypes[number]>('lunch');
@@ -232,7 +240,7 @@ export default function HealthData() {
         <div className="mt-8">
           <h2 className="font-semibold text-gray-800 mb-3">Today's Logged Meals</h2>
           <div className="space-y-2">
-            {todayLog.meals.map((meal) => (
+            {todayLog.meals.map((meal: MealEntry) => (
               <div key={meal.id} className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">{meal.foodName}</p>
