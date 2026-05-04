@@ -40,9 +40,9 @@ export default function Register() {
 
   const isOAuthFlow = !!currentUser;
 
-  const isPhilippinePhone = (phone: string) => {
+  const isValidPhone = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
-    return /^09\d{9}$/.test(digits) || /^639\d{9}$/.test(digits);
+    return digits.length >= 7 && digits.length <= 15;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,12 +51,12 @@ export default function Register() {
     setMessage('');
 
     if (!form.name || !form.email || !form.phone) {
-      setError('Name, email, and Philippine phone number are required.');
+      setError('Name, email, and phone number are required.');
       return;
     }
 
-    if (!isPhilippinePhone(form.phone)) {
-      setError('Please enter a valid Philippine phone number (09xxxxxxxxx or 639xxxxxxxxx).');
+    if (!isValidPhone(form.phone)) {
+      setError('Please enter a valid phone number.');
       return;
     }
 
@@ -206,19 +206,19 @@ export default function Register() {
               </>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone (Philippines only)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
               <input
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="09123456789 or 639123456789"
+                placeholder="09123456789"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">I am a…</label>
               <div className="grid grid-cols-2 gap-3">
-                {(['patient', 'dietician', 'nutritionist', 'admin'] as UserRole[]).map((role) => (
+                {(['patient', 'dietician', 'nutritionist'] as UserRole[]).map((role) => (
                   <button
                     key={role}
                     type="button"

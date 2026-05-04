@@ -19,12 +19,16 @@ const hasPermission = (userRole: string, requiredRole: string[]): boolean => {
 const mapSupabaseUser = (user: Session['user'] | null): User | null => {
   if (!user) return null;
   const metadata = user.user_metadata as Record<string, unknown> | undefined;
+  const rawRole = metadata?.role as string | undefined;
+  const role = rawRole && ['patient', 'dietician', 'nutritionist', 'admin'].includes(rawRole)
+    ? (rawRole as User['role'])
+    : 'patient';
 
   return {
     id: user.id,
     name: (metadata?.name as string) || user.email?.split('@')[0] || 'Anonymous',
     email: user.email || '',
-    role: (metadata?.role as User['role']) || 'patient',
+    role,
     avatar: metadata?.avatar as string | undefined,
     phone: metadata?.phone as string | undefined,
     address: metadata?.address as string | undefined,
@@ -93,6 +97,30 @@ export const useStore = create<AppState>()(
 
       initializeAuth: async () => {
         set({ authLoading: true });
+
+        if (typeof window !== 'undefined') {
+          const hash = window.location.hash;
+          if (hash.includes('access_token') || hash.includes('refresh_token') || window.location.search.includes('code=')) {
+            const authWithUrl = supabase.auth as unknown as {
+              getSessionFromUrl?: () => Promise<{ data: { session: Session | null } | null; error: { message: string } | null }>;
+            };
+            const { data, error } = authWithUrl.getSessionFromUrl
+              ? await authWithUrl.getSessionFromUrl()
+              : { data: null, error: null };
+            if (error) {
+              console.error('Supabase OAuth redirect session error:', error.message);
+            }
+            if (data?.session) {
+              if (window.location.pathname === '/') {
+                window.location.replace('/register');
+                return;
+              }
+              if (window.location.pathname === '/register') {
+                window.history.replaceState(null, '', window.location.pathname + window.location.search);
+              }
+            }
+          }
+        }
 
         const { data, error } = await supabase.auth.getSession();
         if (error) {
