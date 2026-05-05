@@ -204,13 +204,13 @@ export default function DieticianDashboard() {
   const [filterCondition, setFilterCondition] = useState<HealthCondition | ''>('');
 
   useEffect(() => {
-    const loadPatients = async () => {
-      const allPatients = await getAllPatients();
-      setPatients(allPatients);
-      setLoading(false);
-    };
-    loadPatients();
-  }, [getAllPatients]);
+  const loadPatients = async () => {
+    const allPatients = await getAllPatients();
+    setPatients(allPatients);
+    setLoading(false);
+  };
+  loadPatients();
+}, [getAllPatients]);
 
   if (loading) {
     return (
