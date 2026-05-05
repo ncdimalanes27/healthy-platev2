@@ -24,16 +24,37 @@ const categoryEmoji: Record<string, string> = {
 
 export default function HealthData() {
   const { currentUser, addMealEntry, getTodayLog } = useStore();
-  const [todayLog, setTodayLog] = useState<DailyLog | null>(null);
+  const [todayLog, setTodayLog] = useState<DailyLog | null>({
+    date: new Date().toISOString().split('T')[0],
+    meals: [],
+    total_calories: 0,
+    total_protein: 0,
+    total_carbs: 0,
+    total_fat: 0,
+  });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [mealType, setMealType] = useState<typeof mealTypes[number]>('lunch');
+  const [added, setAdded] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [budgetOnly, setBudgetOnly] = useState(false);
 
   useEffect(() => {
     const loadTodayLog = async () => {
-      if (currentUser?.id) {
-        const log = await getTodayLog(currentUser.id);
-        setTodayLog(log);
+      try {
+        if (currentUser?.id) {
+          const log = await getTodayLog(currentUser.id);
+          if (log) {
+            setTodayLog(log);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading today log:', err);
+        setError('Unable to load today\'s log. Please refresh the page.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     loadTodayLog();
   }, [currentUser?.id, getTodayLog]);
@@ -45,12 +66,6 @@ export default function HealthData() {
       </div>
     );
   }
-
-  const [search, setSearch] = useState('');
-  const [mealType, setMealType] = useState<typeof mealTypes[number]>('lunch');
-  const [added, setAdded] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [budgetOnly, setBudgetOnly] = useState(false);
 
   const sourceList = budgetOnly ? budgetFoods : filipinoFoods;
 
@@ -64,6 +79,11 @@ export default function HealthData() {
   }).slice(0, 40);
 
   const handleAdd = async (food: FoodItem) => {
+    if (!currentUser?.id) {
+      setError('Unable to add food right now. Please sign in again.');
+      return;
+    }
+
     const entry: MealEntry = {
       id: `e${Date.now()}`,
       foodId: food.id,
@@ -76,13 +96,22 @@ export default function HealthData() {
       mealType,
       date: new Date().toISOString().split('T')[0],
     };
-    const success = await addMealEntry(currentUser!.id, entry);
-    if (success) {
-      // Reload today's log
-      const log = await getTodayLog(currentUser!.id);
-      setTodayLog(log);
-      setAdded(food.id);
-      setTimeout(() => setAdded(null), 1500);
+
+    try {
+      const success = await addMealEntry(currentUser.id, entry);
+      if (success) {
+        const log = await getTodayLog(currentUser.id);
+        if (log) {
+          setTodayLog(log);
+        }
+        setAdded(food.id);
+        setTimeout(() => setAdded(null), 1500);
+      } else {
+        setError('Unable to add this food item. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error adding food entry:', err);
+      setError('Unable to add food right now. Please try again later.');
     }
   };
 
@@ -101,6 +130,12 @@ export default function HealthData() {
           {filipinoFoods.length} foods available · Search or filter by category
         </p>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Today's summary */}
       {todayLog && (
