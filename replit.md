@@ -1,36 +1,46 @@
-# [Project name]
+# HealthyPlate
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Filipino nutrition companion app connecting patients with dieticians and nutritionists. Supports role-based access (patient, dietician, nutritionist, admin) with dashboards tailored to each role.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/healthy-plate run dev` — run the frontend (uses workflow)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: Vite + React + react-router-dom + Tailwind CSS v3
+- Auth/DB: Supabase (auth + PostgreSQL)
+- State: Zustand with persist middleware
+- Charts: Recharts
+- API: Express 5 (artifacts/api-server)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/healthy-plate/` — main React frontend
+- `artifacts/healthy-plate/src/pages/` — all page components (Login, Dashboard, HealthData, MealPlans, etc.)
+- `artifacts/healthy-plate/src/store/useStore.ts` — Zustand store with Supabase auth + all data methods
+- `artifacts/healthy-plate/src/lib/supabaseClient.ts` — Supabase client (reads VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
+- `artifacts/healthy-plate/src/lib/database.ts` — Supabase DB helpers
+- `artifacts/healthy-plate/src/types/index.ts` — all TypeScript types incl. disease guidelines
+- `artifacts/healthy-plate/src/components/layout/Layout.tsx` — sidebar + mobile nav
+- `artifacts/api-server/` — Express API server (currently minimal, healthz only)
+- `lib/db/` — Drizzle ORM (not used yet — app uses Supabase directly)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- App uses Supabase directly from the frontend (no API server proxy for DB calls)
+- Role hierarchy: admin (4) > nutritionist (3) > dietician (2) > patient (1)
+- ProtectedRoute component enforces role-based access at the route level
+- Zustand persist middleware keeps auth state across refreshes
+- Tailwind v3 (not v4) with PostCSS — configured via `tailwind.config.js` + `postcss.config.js`
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+HealthyPlate is a chronic disease management nutrition app. Patients log meals, track health metrics, and view assigned meal plans. Dieticians and nutritionists manage patient notes, assign meal plans, and track progress. Admins manage all users and system settings.
 
 ## User preferences
 
@@ -38,8 +48,11 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Vite secrets prefixed `VITE_` must be set in Replit Secrets (not env vars) to be exposed to the browser
+- The app uses Supabase for both auth and database — `DATABASE_URL` (Replit Postgres) is not used by the frontend
+- Tailwind v3 is used (not v4) — do not upgrade to v4 or switch to `@tailwindcss/vite`
 
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Supabase schema: see `.migration-backup/supabase-schema.sql` for the original table definitions
