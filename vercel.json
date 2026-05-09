@@ -1,0 +1,8 @@
+{
+  "buildCommand": "pnpm --filter @workspace/healthy-plate run build",
+  "outputDirectory": "artifacts/healthy-plate/dist/public",
+  "installCommand": "pnpm install",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
