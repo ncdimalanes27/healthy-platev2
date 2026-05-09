@@ -232,7 +232,9 @@ export interface MealEntry {
   protein: number;
   carbs: number;
   fat: number;
+  fats?: number; // ADD THIS: Para hindi mag-error sa 'fats'
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  type?: string;  // ADD THIS: Para hindi mag-error sa 'type'
   date: string;
 }
 

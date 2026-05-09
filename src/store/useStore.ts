@@ -257,17 +257,18 @@ export const useStore = create<AppState>()(
   },
 
   addMealEntry: async (userId, entry) => {
-  // Ensure the entry is correctly spread and column names match your SQL
   const { error } = await supabase
     .from('daily_logs')
     .insert([{
       user_id: userId,
-      food_name: entry.name,
+      // FIX: Gamitin ang properties na match sa iyong MealEntry type
+      // Kung 'label' ang nasa type mo, palitan ang entry.name ng entry.label
+      food_name: (entry as any).name || (entry as any).label, 
       calories: entry.calories,
       protein: entry.protein,
       carbs: entry.carbs,
-      fats: entry.fats,
-      meal_type: entry.type, // e.g., 'breakfast'
+      fats: (entry as any).fat || (entry as any).fats, // FIX: fat vs fats
+      meal_type: (entry as any).type || (entry as any).mealType,
       log_date: new Date().toISOString().split('T')[0]
     }]);
 
@@ -295,7 +296,7 @@ export const useStore = create<AppState>()(
   },
 
   saveMealPlan: async (userId, plan) => {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('meal_plans')
     .insert([{
       user_id: userId,
