@@ -2,8 +2,6 @@ import { supabase } from './supabaseClient';
 import type { User, HealthProfile, DailyLog, MealPlan, MealEntry, DieticianNote, AssignedMealPlan } from '../types';
 
 // ── Mapping helpers ───────────────────────────────────────────────────────────
-// The DB uses snake_case; our TypeScript types use camelCase. These helpers
-// convert between the two so every caller gets the right shape.
 
 function mapHealthProfile(row: any): HealthProfile | null {
   if (!row) return null;
@@ -59,24 +57,62 @@ function mapAssignedPlan(row: any): AssignedMealPlan {
   };
 }
 
+// ── Admin API helpers (bypass RLS via server-side service role) ───────────────
+
+async function getAuthToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+async function adminGet(path: string): Promise<any> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`/admin-api/${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error(`[adminGet] ${path} failed:`, err);
+      return null;
+    }
+    return res.json();
+  } catch (e) {
+    console.error(`[adminGet] ${path} threw:`, e);
+    return null;
+  }
+}
+
+async function adminPost(path: string, body: unknown): Promise<{ ok: boolean; data: any }> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`/admin-api/${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) console.error(`[adminPost] ${path} failed:`, data);
+    return { ok: res.ok, data };
+  } catch (e) {
+    console.error(`[adminPost] ${path} threw:`, e);
+    return { ok: false, data: null };
+  }
+}
+
 // ── Database service ──────────────────────────────────────────────────────────
 export const db = {
 
-  // ── Profile ────────────────────────────────────────────────────────────────
+  // ── Health Profile ─────────────────────────────────────────────────────────
+  // Read via admin API (bypasses RLS when professionals query patient profiles)
   async getProfile(userId: string): Promise<HealthProfile | null> {
-    const { data, error } = await supabase
-      .from('health_profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error fetching profile:', error);
-      return null;
-    }
+    const data = await adminGet(`health-profile/${userId}`);
     return mapHealthProfile(data);
   },
 
+  // Write uses own JWT — health_profiles RLS allows own-user upsert without role check
   async saveProfile(profile: HealthProfile): Promise<boolean> {
     const { error } = await supabase
       .from('health_profiles')
@@ -117,18 +153,10 @@ export const db = {
     return data || null;
   },
 
+  // Read via admin API — professionals reading patient logs
   async getLogs(userId: string): Promise<DailyLog[]> {
-    const { data, error } = await supabase
-      .from('daily_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching logs:', error);
-      return [];
-    }
-    return data || [];
+    const data = await adminGet(`logs/${userId}`);
+    return Array.isArray(data) ? data : [];
   },
 
   async addMealEntry(userId: string, entry: MealEntry): Promise<boolean> {
@@ -221,20 +249,13 @@ export const db = {
   },
 
   // ── Notes ──────────────────────────────────────────────────────────────────
+  // Read via admin API — professionals reading notes for a patient
   async getNotesForPatient(patientId: string): Promise<DieticianNote[]> {
-    const { data, error } = await supabase
-      .from('dietician_notes')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching notes:', error);
-      return [];
-    }
-    return (data || []).map(mapNote);
+    const data = await adminGet(`notes/${patientId}`);
+    return Array.isArray(data) ? data.map(mapNote) : [];
   },
 
+  // Write via admin API — dietician_notes INSERT policy references profiles (recursive)
   async addNote(note: Omit<DieticianNote, 'id' | 'createdAt'>): Promise<boolean> {
     const categoryMap: Record<string, string> = {
       recommendation: 'info',
@@ -242,23 +263,16 @@ export const db = {
       warning: 'warning',
       progress: 'progress',
     };
-    const { error } = await supabase
-      .from('dietician_notes')
-      .insert({
-        patient_id: note.patientId,
-        dietician_id: note.dieticianId,
-        dietician_name: note.dieticianName,
-        content: note.content,
-        category: categoryMap[note.category] || 'info',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('Error adding note:', error);
-      return false;
-    }
-    return true;
+    const { ok } = await adminPost('notes', {
+      patient_id: note.patientId,
+      dietician_id: note.dieticianId,
+      dietician_name: note.dieticianName,
+      content: note.content,
+      category: categoryMap[note.category] || 'info',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    return ok;
   },
 
   async updateNote(noteId: string, updates: Partial<DieticianNote>): Promise<boolean> {
@@ -291,36 +305,20 @@ export const db = {
   },
 
   // ── Assigned meal plans ────────────────────────────────────────────────────
+  // Read via admin API
   async getAssignedPlansForPatient(patientId: string): Promise<AssignedMealPlan[]> {
-    const { data, error } = await supabase
-      .from('assigned_meal_plans')
-      .select('*, meal_plans (*)')
-      .eq('patient_id', patientId)
-      .eq('status', 'active');
-
-    if (error) {
-      console.error('Error fetching assigned plans:', error);
-      return [];
-    }
-    return (data || []).map(mapAssignedPlan);
+    const data = await adminGet(`assigned-plans/${patientId}`);
+    return Array.isArray(data) ? data.map(mapAssignedPlan) : [];
   },
 
   async getAssignedPlansByProfessional(professionalId: string): Promise<AssignedMealPlan[]> {
-    const { data, error } = await supabase
-      .from('assigned_meal_plans')
-      .select('*, meal_plans (*)')
-      .or(`dietician_id.eq.${professionalId},nutritionist_id.eq.${professionalId}`)
-      .eq('status', 'active');
-
-    if (error) {
-      console.error('Error fetching professional assignments:', error);
-      return [];
-    }
-    return (data || []).map(mapAssignedPlan);
+    const data = await adminGet(`professional-plans/${professionalId}`);
+    return Array.isArray(data) ? data.map(mapAssignedPlan) : [];
   },
 
+  // Write via admin API — assigned_meal_plans INSERT policy references profiles (recursive)
   async assignMealPlan(assignment: Omit<AssignedMealPlan, 'id' | 'assignedAt'>): Promise<boolean> {
-    // Step 1: Create a meal_plan record so we have a valid FK id
+    // Step 1: Create meal_plan record (own-user insert, non-recursive RLS — works)
     const { data: planData, error: planError } = await supabase
       .from('meal_plans')
       .insert({
@@ -341,44 +339,23 @@ export const db = {
       return false;
     }
 
-    // Step 2: Assign it to the patient
-    const { error } = await supabase
-      .from('assigned_meal_plans')
-      .insert({
-        patient_id: assignment.patientId,
-        dietician_id: assignment.dieticianId || null,
-        nutritionist_id: assignment.nutritionistId || null,
-        meal_plan_id: planData.id,
-        notes: assignment.note || null,
-        status: 'active',
-        assigned_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('Error assigning meal plan:', error);
-      return false;
-    }
-    return true;
+    // Step 2: Assign to patient via admin API (bypasses recursive RLS)
+    const { ok } = await adminPost('assigned-plans', {
+      patient_id: assignment.patientId,
+      dietician_id: assignment.dieticianId || null,
+      nutritionist_id: assignment.nutritionistId || null,
+      meal_plan_id: planData.id,
+      notes: assignment.note || null,
+      status: 'active',
+      assigned_at: new Date().toISOString(),
+    });
+    return ok;
   },
 
-  // ── User management (uses server-side admin API to bypass RLS) ─────────────
+  // ── User management ────────────────────────────────────────────────────────
   async _adminFetch(role: string): Promise<any[]> {
-    try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      const res = await fetch(`/admin-api/users?role=${role}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error(`Admin API error (${role}):`, err);
-        return [];
-      }
-      return await res.json();
-    } catch (e) {
-      console.error(`Admin API fetch failed (${role}):`, e);
-      return [];
-    }
+    const data = await adminGet(`users?role=${role}`);
+    return Array.isArray(data) ? data : [];
   },
 
   async getAllPatients(): Promise<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]> {

@@ -3,7 +3,7 @@
   "outputDirectory": "artifacts/healthy-plate/dist/public",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "rewrites": [
-    { "source": "/admin-api/:path*", "destination": "/api/admin-users" },
+    { "source": "/admin-api/:path*", "destination": "/api/admin" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
