@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { adminApiPlugin } from "./src/lib/adminPlugin";
 
 const isReplit = !!process.env.REPL_ID;
 const port = Number(process.env.PORT) || 5173;
@@ -9,6 +10,7 @@ const basePath = process.env.BASE_PATH || "/";
 export default defineConfig({
   base: basePath,
   plugins: [
+    adminApiPlugin(),
     react(),
     ...(isReplit && process.env.NODE_ENV !== "production"
       ? [

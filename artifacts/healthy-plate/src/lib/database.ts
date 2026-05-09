@@ -361,70 +361,48 @@ export const db = {
     return true;
   },
 
-  // ── User management ────────────────────────────────────────────────────────
-  async getAllPatients(): Promise<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(`
-        *,
-        health_profiles (*),
-        daily_logs (
-          id,
-          date,
-          meals,
-          total_calories,
-          total_protein,
-          total_carbs,
-          total_fat,
-          weight,
-          blood_sugar,
-          blood_pressure_systolic,
-          blood_pressure_diastolic
-        )
-      `)
-      .eq('role', 'patient')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching patients:', error);
+  // ── User management (uses server-side admin API to bypass RLS) ─────────────
+  async _adminFetch(role: string): Promise<any[]> {
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const res = await fetch(`/admin-api/users?role=${role}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error(`Admin API error (${role}):`, err);
+        return [];
+      }
+      return await res.json();
+    } catch (e) {
+      console.error(`Admin API fetch failed (${role}):`, e);
       return [];
     }
+  },
 
-    return (data || []).map(item => {
-      const sortedLogs = (item.daily_logs || []).sort(
-        (a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-      return {
-        user: {
-          id: item.id,
-          name: item.name,
-          email: item.email,
-          role: item.role,
-          phone: item.phone,
-          address: item.address,
-          avatar: item.avatar,
-          createdAt: item.created_at,
-          lastLogin: item.last_login,
-        },
-        profile: mapHealthProfile(item.health_profiles?.[0] || null),
-        lastLog: sortedLogs[0] || null,
-      };
-    });
+  async getAllPatients(): Promise<{ user: User; profile: HealthProfile | null; lastLog: DailyLog | null }[]> {
+    const rows = await this._adminFetch('patient');
+    return rows.map((item: any) => ({
+      user: {
+        id: item.id,
+        name: item.name,
+        email: item.email,
+        role: item.role,
+        phone: item.phone,
+        address: item.address,
+        avatar: item.avatar,
+        createdAt: item.created_at,
+        lastLogin: item.last_login,
+      },
+      profile: mapHealthProfile(item.health_profiles?.[0] || null),
+      lastLog: null,
+    }));
   },
 
   async getAllProfessionals(): Promise<User[]> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('role', ['dietician', 'nutritionist'])
-      .order('name');
-
-    if (error) {
-      console.error('Error fetching professionals:', error);
-      return [];
-    }
-
-    return (data || []).map(item => ({
+    const rows = await this._adminFetch('professional');
+    return rows.map((item: any) => ({
       id: item.id,
       name: item.name,
       email: item.email,
@@ -438,18 +416,8 @@ export const db = {
   },
 
   async getAllAdmins(): Promise<User[]> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'admin')
-      .order('name');
-
-    if (error) {
-      console.error('Error fetching admins:', error);
-      return [];
-    }
-
-    return (data || []).map(item => ({
+    const rows = await this._adminFetch('admin');
+    return rows.map((item: any) => ({
       id: item.id,
       name: item.name,
       email: item.email,
