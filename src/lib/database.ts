@@ -143,21 +143,23 @@ export const db = {
     return data || [];
   },
 
-  async saveMealPlan(userId: string, plan: Omit<MealPlan, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<boolean> {
-    const { error } = await supabase
-      .from('meal_plans')
-      .insert({
-        ...plan,
-        user_id: userId,
-        updated_at: new Date().toISOString(),
-      });
+ // Update saveMealPlan in database.ts
+async saveMealPlan(userId: string, plan: any): Promise<boolean> {
+  const { error } = await supabase
+    .from('meal_plans')
+    .insert({
+      ...plan,
+      user_id: userId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
 
-    if (error) {
-      console.error('Error saving meal plan:', error);
-      return false;
-    }
-    return true;
-  },
+  if (error) {
+    console.error('Error saving meal plan:', error);
+    return false;
+  }
+  return true;
+},
 
   // Notes operations
   async getNotesForPatient(patientId: string): Promise<DieticianNote[]> {
@@ -175,20 +177,19 @@ export const db = {
     return data || [];
   },
 
-  async addNote(note: Omit<DieticianNote, 'id' | 'createdAt'>): Promise<boolean> {
-    const { error } = await supabase
-      .from('dietician_notes')
-      .insert({
-        ...note,
-        updated_at: new Date().toISOString(),
-      });
+  async addNote(note: any): Promise<boolean> {
+  const { error } = await supabase
+    .from('dietician_notes')
+    .insert({
+      patient_id: note.patientId, // Siguraduhin na tugma sa DB column name
+      dietician_id: note.dieticianId,
+      content: note.content,
+      title: note.title,
+      created_at: new Date().toISOString(), // Ito dapat ay created_at na
+    });
 
-    if (error) {
-      console.error('Error adding note:', error);
-      return false;
-    }
-    return true;
-  },
+  return !error;
+},
 
   async updateNote(noteId: string, updates: Partial<DieticianNote>): Promise<boolean> {
     const { error } = await supabase

@@ -257,24 +257,55 @@ export const useStore = create<AppState>()(
   },
 
   addMealEntry: async (userId, entry) => {
-    return await db.addMealEntry(userId, entry);
-  },
+  // Ensure the entry is correctly spread and column names match your SQL
+  const { error } = await supabase
+    .from('daily_logs')
+    .insert([{
+      user_id: userId,
+      food_name: entry.name,
+      calories: entry.calories,
+      protein: entry.protein,
+      carbs: entry.carbs,
+      fats: entry.fats,
+      meal_type: entry.type, // e.g., 'breakfast'
+      log_date: new Date().toISOString().split('T')[0]
+    }]);
+
+  return !error;
+},
 
   getTodayLog: async (userId) => {
     return await db.getTodayLog(userId);
   },
 
   updateHealthMetrics: async (userId, data) => {
-    return await db.updateHealthMetrics(userId, data);
-  },
+  const { error } = await supabase
+    .from('health_profiles') // Or 'daily_metrics' depending on your SQL table name
+    .upsert({
+      user_id: userId,
+      ...data,
+      updated_at: new Date().toISOString()
+    });
+
+  return !error;
+},
 
   getLogs: async (userId) => {
     return await db.getLogs(userId);
   },
 
   saveMealPlan: async (userId, plan) => {
-    return await db.saveMealPlan(userId, plan);
-  },
+  const { data, error } = await supabase
+    .from('meal_plans')
+    .insert([{
+      user_id: userId,
+      ...plan
+    }])
+    .select()
+    .single();
+
+  return !error;
+},
 
   getMealPlans: async (userId) => {
     return await db.getMealPlans(userId);
@@ -297,14 +328,31 @@ export const useStore = create<AppState>()(
   },
 
   getNotesForCurrentPatient: async () => {
-    const user = get().currentUser;
-    if (!user || user.role !== 'patient') return [];
-    return await db.getNotesForPatient(user.id);
-  },
+  const user = get().currentUser;
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from('dietician_notes')
+    .select('*')
+    .eq('patient_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) return [];
+  return data;
+},
 
   assignMealPlan: async (assignment) => {
-    return await db.assignMealPlan(assignment);
-  },
+  const { error } = await supabase
+    .from('assigned_meal_plans')
+    .insert([{
+      dietician_id: assignment.dieticianId,
+      patient_id: assignment.patientId,
+      meal_plan_id: assignment.mealPlanId,
+      status: 'active'
+    }]);
+
+  return !error;
+},
 
   getAssignedPlansForPatient: async (patientId) => {
     return await db.getAssignedPlansForPatient(patientId);
@@ -314,16 +362,63 @@ export const useStore = create<AppState>()(
     return await db.getAssignedPlansByProfessional(professionalId);
   },
 
-  getAllPatients: async () => {
-    return await db.getAllPatients();
+  // Inside useStore.ts
+getAllPatients: async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        health_profiles (*),
+        daily_logs (*)
+      `)
+      .eq('role', 'patient')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Error fetching patients:", error);
+      return [];
+    }
+
+    return (data || []).map(p => ({
+      user: {
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        role: p.role,
+        phone: p.phone,
+        address: p.address,
+        avatar: p.avatar,
+        createdAt: p.created_at,
+        lastLogin: p.last_login,
+      },
+      profile: p.health_profiles?.[0] || null,
+      // Kinukuha nito yung pinakabagong log entry
+      lastLog: p.daily_logs?.sort((a: any, b: any) => 
+        new Date(b.log_date || b.date).getTime() - new Date(a.log_date || a.date).getTime()
+      )[0] || null,
+    }));
   },
 
   getAllProfessionals: async () => {
-    return await db.getAllProfessionals();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('role', ['dietician', 'nutritionist'])
+      .order('name');
+    
+    if (error) return [];
+    return data;
   },
 
   getAllAdmins: async () => {
-    return await db.getAllAdmins();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'admin')
+      .order('name');
+
+    if (error) return [];
+    return data;
   },
 
   updateUser: async (userId, data) => {
