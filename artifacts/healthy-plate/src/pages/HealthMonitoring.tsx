@@ -156,7 +156,7 @@ export default function HealthMonitoring() {
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
-                <Area type="monotone" dataKey="bloodSugar" stroke="#f97316" fill="url(#bsGrad)" strokeWidth={2} name="Blood Sugar" />
+                <Area type="monotone" dataKey="blood_sugar" stroke="#f97316" fill="url(#bsGrad)" strokeWidth={2} name="Blood Sugar" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

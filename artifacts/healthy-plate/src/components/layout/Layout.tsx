@@ -30,6 +30,7 @@ const nutritionistNav = [
   { to: '/nutritionist/patients', icon: Users, label: 'Patients' },
   { to: '/nutritionist/notes', icon: MessageSquare, label: 'Notes' },
   { to: '/nutritionist/assign', icon: ClipboardList, label: 'Assign Plan' },
+  { to: '/nutritionist/progress', icon: BarChart2, label: 'Progress' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

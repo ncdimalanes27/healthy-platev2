@@ -78,6 +78,7 @@ export default function MealPlans() {
   }, [currentUser?.id, getProfile, getMealPlans]);
 
   const [activePlan, setActivePlan] = useState<MealPlan | null>(null);
+  const [saveBanner, setSaveBanner] = useState(false);
   const [customCals, setCustomCals] = useState('');
   const [selectedCondition] = useState<HealthCondition | ''>('');
   const [showShoppingList, setShowShoppingList] = useState(false);
@@ -101,8 +102,8 @@ export default function MealPlans() {
     if (!activePlan) return;
     const success = await saveMealPlan(currentUser!.id, activePlan);
     if (success) {
-      alert('Meal plan saved!');
-      // Reload saved plans
+      setSaveBanner(true);
+      setTimeout(() => setSaveBanner(false), 3000);
       const plans = await getMealPlans(currentUser!.id);
       setSavedPlans(plans);
     }
@@ -167,6 +168,11 @@ export default function MealPlans() {
       {/* Active plan */}
       {activePlan && (
         <div className="mb-8">
+          {saveBanner && (
+            <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm font-medium rounded-xl px-4 py-3 flex items-center gap-2">
+              ✅ Meal plan saved successfully!
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold text-gray-800">{activePlan.name}</h2>

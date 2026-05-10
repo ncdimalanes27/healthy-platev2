@@ -5,14 +5,8 @@ import type { User, HealthProfile, DailyLog, MealPlan, MealEntry, DieticianNote,
 import { supabase } from '../lib/supabaseClient';
 import { db } from '../lib/database';
 
-// Role-based access control helper
 const hasPermission = (userRole: string, requiredRole: string[]): boolean => {
-  const roleHierarchy: Record<string, number> = {
-    admin: 4,
-    nutritionist: 3,
-    dietician: 2,
-    patient: 1,
-  };
+  const roleHierarchy: Record<string, number> = { admin: 4, nutritionist: 3, dietician: 2, patient: 1 };
   return requiredRole.some(role => (roleHierarchy[userRole] || 0) >= (roleHierarchy[role] || 0));
 };
 
@@ -43,12 +37,28 @@ const createAuthState = (session: Session | null): AuthState => ({
   expiresAt: session?.expires_at ? session.expires_at * 1000 : null,
 });
 
+// Fetch authoritative role + name from the profiles table via admin API.
+// This corrects stale JWT metadata (e.g. after admin changes a user's role).
+async function syncProfileFromDB(token: string): Promise<{ role: User['role']; name: string } | null> {
+  try {
+    const res = await fetch('/admin-api/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const validRoles = ['patient', 'dietician', 'nutritionist', 'admin'] as const;
+    if (!data?.role || !validRoles.includes(data.role)) return null;
+    return { role: data.role as User['role'], name: data.name || '' };
+  } catch {
+    return null;
+  }
+}
+
 interface AppState {
   currentUser: User | null;
   auth: AuthState;
   authLoading: boolean;
 
-  // Auth methods
   initializeAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -57,7 +67,6 @@ interface AppState {
   refreshAuth: () => Promise<boolean>;
   hasRole: (requiredRoles: string[]) => boolean;
 
-  // Data methods (now using Supabase)
   saveProfile: (profile: HealthProfile) => Promise<boolean>;
   getProfile: (userId: string) => Promise<HealthProfile | null>;
 
@@ -69,7 +78,6 @@ interface AppState {
   saveMealPlan: (userId: string, plan: Omit<MealPlan, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<boolean>;
   getMealPlans: (userId: string) => Promise<MealPlan[]>;
 
-  // Dietician/Nutritionist features
   addNote: (note: Omit<DieticianNote, 'id' | 'createdAt'>) => Promise<boolean>;
   getNotesForPatient: (patientId: string) => Promise<DieticianNote[]>;
   deleteNote: (noteId: string) => Promise<boolean>;
@@ -107,9 +115,7 @@ export const useStore = create<AppState>()(
             const { data, error } = authWithUrl.getSessionFromUrl
               ? await authWithUrl.getSessionFromUrl()
               : { data: null, error: null };
-            if (error) {
-              console.error('Supabase OAuth redirect session error:', error.message);
-            }
+            if (error) console.error('Supabase OAuth redirect session error:', error.message);
             if (data?.session) {
               if (window.location.pathname === '/') {
                 window.location.replace('/register');
@@ -123,22 +129,25 @@ export const useStore = create<AppState>()(
         }
 
         const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error('Supabase session restore failed:', error.message);
+        if (error) console.error('Supabase session restore failed:', error.message);
+
+        let user = mapSupabaseUser(data.session?.user ?? null);
+
+        // Sync authoritative role + name from profiles table (overrides stale JWT metadata)
+        if (user && data.session?.access_token) {
+          const dbProfile = await syncProfileFromDB(data.session.access_token);
+          if (dbProfile) user = { ...user, role: dbProfile.role, name: dbProfile.name || user.name };
         }
 
-        set({
-          currentUser: mapSupabaseUser(data.session?.user ?? null),
-          auth: createAuthState(data.session ?? null),
-          authLoading: false,
-        });
+        set({ currentUser: user, auth: createAuthState(data.session ?? null), authLoading: false });
 
-        supabase.auth.onAuthStateChange((_event, session) => {
-          set({
-            currentUser: mapSupabaseUser(session?.user ?? null),
-            auth: createAuthState(session ?? null),
-            authLoading: false,
-          });
+        supabase.auth.onAuthStateChange(async (_event, session) => {
+          let sessionUser = mapSupabaseUser(session?.user ?? null);
+          if (sessionUser && session?.access_token) {
+            const dbProfile = await syncProfileFromDB(session.access_token);
+            if (dbProfile) sessionUser = { ...sessionUser, role: dbProfile.role, name: dbProfile.name || sessionUser.name };
+          }
+          set({ currentUser: sessionUser, auth: createAuthState(session ?? null), authLoading: false });
         });
       },
 
@@ -151,20 +160,21 @@ export const useStore = create<AppState>()(
           return { success: false, error: 'Unable to sign in. Please verify your email or try again.' };
         }
 
-        set({
-          currentUser: mapSupabaseUser(session.user),
-          auth: createAuthState(session),
-        });
+        let user = mapSupabaseUser(session.user);
 
+        // Sync authoritative role from profiles table
+        if (user && session.access_token) {
+          const dbProfile = await syncProfileFromDB(session.access_token);
+          if (dbProfile) user = { ...user, role: dbProfile.role, name: dbProfile.name || user.name };
+        }
+
+        set({ currentUser: user, auth: createAuthState(session) });
         return { success: true };
       },
 
       logout: async () => {
         await supabase.auth.signOut();
-        set({
-          currentUser: null,
-          auth: { token: null, refreshToken: null, expiresAt: null },
-        });
+        set({ currentUser: null, auth: { token: null, refreshToken: null, expiresAt: null } });
       },
 
       register: async (userData, password) => {
@@ -172,12 +182,7 @@ export const useStore = create<AppState>()(
           email: userData.email,
           password,
           options: {
-            data: {
-              role: userData.role,
-              name: userData.name,
-              phone: userData.phone,
-              address: userData.address,
-            },
+            data: { role: userData.role, name: userData.name, phone: userData.phone, address: userData.address },
           },
         });
 
@@ -191,27 +196,22 @@ export const useStore = create<AppState>()(
           return { success: false, error: errorMessage };
         }
         if (!data.session) {
-          return {
-            success: true,
-            message: 'Registration successful. Please verify your email before signing in.',
-          };
+          return { success: true, message: 'Registration successful. Please verify your email before signing in.' };
         }
 
-        set({
-          currentUser: mapSupabaseUser(data.session.user),
-          auth: createAuthState(data.session),
-        });
+        let user = mapSupabaseUser(data.session.user);
+        if (user && data.session.access_token) {
+          const dbProfile = await syncProfileFromDB(data.session.access_token);
+          if (dbProfile) user = { ...user, role: dbProfile.role, name: dbProfile.name || user.name };
+        }
+
+        set({ currentUser: user, auth: createAuthState(data.session) });
         return { success: true };
       },
 
       completeOAuthRegistration: async (profileData) => {
         const { data, error } = await supabase.auth.updateUser({
-          data: {
-            name: profileData.name,
-            role: profileData.role,
-            phone: profileData.phone,
-            address: profileData.address,
-          },
+          data: { name: profileData.name, role: profileData.role, phone: profileData.phone, address: profileData.address },
         });
 
         if (error) {
@@ -225,9 +225,15 @@ export const useStore = create<AppState>()(
         }
 
         if (data.user) {
-          set({
-            currentUser: mapSupabaseUser(data.user),
-          });
+          let user = mapSupabaseUser(data.user);
+          if (user) {
+            const session = (await supabase.auth.getSession()).data.session;
+            if (session?.access_token) {
+              const dbProfile = await syncProfileFromDB(session.access_token);
+              if (dbProfile) user = { ...user, role: dbProfile.role, name: dbProfile.name || user.name };
+            }
+          }
+          set({ currentUser: user });
           return { success: true };
         }
 
@@ -241,114 +247,50 @@ export const useStore = create<AppState>()(
         return true;
       },
 
-  hasRole: (requiredRoles) => {
-    const { currentUser } = get();
-    if (!currentUser) return false;
-    return hasPermission(currentUser.role, requiredRoles);
-  },
+      hasRole: (requiredRoles) => {
+        const { currentUser } = get();
+        if (!currentUser) return false;
+        return hasPermission(currentUser.role, requiredRoles);
+      },
 
-  // Data methods (using Supabase database)
-  saveProfile: async (profile) => {
-    return await db.saveProfile(profile);
-  },
+      saveProfile: async (profile) => db.saveProfile(profile),
+      getProfile: async (userId) => db.getProfile(userId),
+      addMealEntry: async (userId, entry) => db.addMealEntry(userId, entry),
+      getTodayLog: async (userId) => db.getTodayLog(userId),
+      updateHealthMetrics: async (userId, data) => db.updateHealthMetrics(userId, data),
+      getLogs: async (userId) => db.getLogs(userId),
+      saveMealPlan: async (userId, plan) => db.saveMealPlan(userId, plan),
+      getMealPlans: async (userId) => db.getMealPlans(userId),
+      addNote: async (note) => db.addNote(note),
+      getNotesForPatient: async (patientId) => db.getNotesForPatient(patientId),
+      deleteNote: async (noteId) => db.deleteNote(noteId),
+      updateNote: async (noteId, updates) => db.updateNote(noteId, updates),
 
-  getProfile: async (userId) => {
-    return await db.getProfile(userId);
-  },
+      getNotesForCurrentPatient: async () => {
+        const user = get().currentUser;
+        if (!user) return [];
+        return db.getNotesForPatient(user.id);
+      },
 
-  addMealEntry: async (userId, entry) => {
-    return await db.addMealEntry(userId, entry);
-  },
+      assignMealPlan: async (assignment) => db.assignMealPlan(assignment),
+      getAssignedPlansForPatient: async (patientId) => db.getAssignedPlansForPatient(patientId),
+      getAssignedPlansByProfessional: async (professionalId) => db.getAssignedPlansByProfessional(professionalId),
+      getAllPatients: async () => db.getAllPatients(),
+      getAllProfessionals: async () => db.getAllProfessionals(),
+      getAllAdmins: async () => db.getAllAdmins(),
+      updateUser: async (userId, data) => db.updateUser(userId, data),
 
-  getTodayLog: async (userId) => {
-    return await db.getTodayLog(userId);
-  },
+      updateUserPassword: async (_userId, _newPassword) => {
+        void _userId; void _newPassword;
+        console.warn('Password updates must be done through Supabase Auth admin API');
+        return false;
+      },
 
-  updateHealthMetrics: async (userId, data) => {
-    return await db.updateHealthMetrics(userId, data);
-  },
-
-  getLogs: async (userId) => {
-    return await db.getLogs(userId);
-  },
-
-  saveMealPlan: async (userId, plan) => {
-    return await db.saveMealPlan(userId, plan);
-  },
-
-  getMealPlans: async (userId) => {
-    return await db.getMealPlans(userId);
-  },
-
-  addNote: async (note) => {
-    return await db.addNote(note);
-  },
-
-  getNotesForPatient: async (patientId) => {
-    return await db.getNotesForPatient(patientId);
-  },
-
-  deleteNote: async (noteId) => {
-    return await db.deleteNote(noteId);
-  },
-
-  updateNote: async (noteId, updates) => {
-    return await db.updateNote(noteId, updates);
-  },
-
-  getNotesForCurrentPatient: async () => {
-    const user = get().currentUser;
-    if (!user) return [];
-    return await db.getNotesForPatient(user.id);
-  },
-
-  assignMealPlan: async (assignment) => {
-    return await db.assignMealPlan(assignment);
-  },
-
-  getAssignedPlansForPatient: async (patientId) => {
-    return await db.getAssignedPlansForPatient(patientId);
-  },
-
-  getAssignedPlansByProfessional: async (professionalId) => {
-    return await db.getAssignedPlansByProfessional(professionalId);
-  },
-
-  getAllPatients: async () => {
-    return await db.getAllPatients();
-  },
-
-  getAllProfessionals: async () => {
-    return await db.getAllProfessionals();
-  },
-
-  getAllAdmins: async () => {
-    return await db.getAllAdmins();
-  },
-
-  updateUser: async (userId, data) => {
-    return await db.updateUser(userId, data);
-  },
-
-  updateUserPassword: async (_userId, _newPassword) => {
-    void _userId;
-    void _newPassword;
-    // Note: Password updates should be handled through Supabase auth
-    // This is a placeholder for admin password reset functionality
-    console.warn('Password updates should be handled through Supabase auth admin API');
-    return false;
-  },
-
-  deleteUser: async (userId) => {
-    return await db.deleteUser(userId);
-  },
+      deleteUser: async (userId) => db.deleteUser(userId),
     }),
     {
       name: 'healthyplate-auth',
-      partialize: (state) => ({
-        currentUser: state.currentUser,
-        auth: state.auth,
-      }),
+      partialize: (state) => ({ currentUser: state.currentUser, auth: state.auth }),
     }
   )
 );

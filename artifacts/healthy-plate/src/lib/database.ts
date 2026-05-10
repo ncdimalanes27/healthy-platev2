@@ -57,7 +57,7 @@ function mapAssignedPlan(row: any): AssignedMealPlan {
   };
 }
 
-// ── Admin API helpers (bypass RLS via server-side service role) ───────────────
+// ── Admin API helpers (bypass RLS via server-side service role key) ────────────
 
 async function getAuthToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
@@ -102,17 +102,55 @@ async function adminPost(path: string, body: unknown): Promise<{ ok: boolean; da
   }
 }
 
+async function adminPatch(path: string, body: unknown): Promise<{ ok: boolean; data: any }> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`/admin-api/${path}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, data };
+  } catch (e) {
+    console.error(`[adminPatch] ${path} threw:`, e);
+    return { ok: false, data: null };
+  }
+}
+
+async function adminDelete(path: string): Promise<boolean> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`/admin-api/${path}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return res.ok;
+  } catch (e) {
+    console.error(`[adminDelete] ${path} threw:`, e);
+    return false;
+  }
+}
+
 // ── Database service ──────────────────────────────────────────────────────────
 export const db = {
 
+  // ── My profile (role sync) ─────────────────────────────────────────────────
+  // Returns the caller's profile row from profiles table — used to get authoritative role
+  async getMyProfile(): Promise<{ id: string; role: string; name: string; email: string } | null> {
+    const data = await adminGet('me');
+    return data ?? null;
+  },
+
   // ── Health Profile ─────────────────────────────────────────────────────────
-  // Read via admin API (bypasses RLS when professionals query patient profiles)
   async getProfile(userId: string): Promise<HealthProfile | null> {
     const data = await adminGet(`health-profile/${userId}`);
     return mapHealthProfile(data);
   },
 
-  // Write uses own JWT — health_profiles RLS allows own-user upsert without role check
   async saveProfile(profile: HealthProfile): Promise<boolean> {
     const { error } = await supabase
       .from('health_profiles')
@@ -153,7 +191,6 @@ export const db = {
     return data || null;
   },
 
-  // Read via admin API — professionals reading patient logs
   async getLogs(userId: string): Promise<DailyLog[]> {
     const data = await adminGet(`logs/${userId}`);
     return Array.isArray(data) ? data : [];
@@ -249,63 +286,79 @@ export const db = {
   },
 
   // ── Notes ──────────────────────────────────────────────────────────────────
-  // Read via admin API — professionals reading notes for a patient
   async getNotesForPatient(patientId: string): Promise<DieticianNote[]> {
     const data = await adminGet(`notes/${patientId}`);
     return Array.isArray(data) ? data.map(mapNote) : [];
   },
 
-  // Write via admin API — dietician_notes INSERT policy references profiles (recursive)
   async addNote(note: Omit<DieticianNote, 'id' | 'createdAt'>): Promise<boolean> {
+    // category column may not exist in live DB — omit it so the row saves with the DB default
+    const body: Record<string, unknown> = {
+      patient_id: note.patientId,
+      dietician_id: note.dieticianId,
+      dietician_name: note.dieticianName,
+      content: note.content,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Only include category if the value maps cleanly to the DB constraint
     const categoryMap: Record<string, string> = {
       recommendation: 'info',
       general: 'info',
       warning: 'warning',
       progress: 'progress',
     };
-    const { ok } = await adminPost('notes', {
-      patient_id: note.patientId,
-      dietician_id: note.dieticianId,
-      dietician_name: note.dieticianName,
-      content: note.content,
-      category: categoryMap[note.category] || 'info',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
+    const dbCat = categoryMap[note.category];
+    if (dbCat) body.category = dbCat;
+
+    const { ok, data } = await adminPost('notes', body);
+
+    // If category column doesn't exist in live DB, retry without it
+    if (!ok && typeof data === 'object' && data !== null) {
+      const msg = (data as any).message as string | undefined;
+      if (msg?.includes('category')) {
+        delete body.category;
+        const retry = await adminPost('notes', body);
+        return retry.ok;
+      }
+    }
     return ok;
   },
 
   async updateNote(noteId: string, updates: Partial<DieticianNote>): Promise<boolean> {
-    const { error } = await supabase
-      .from('dietician_notes')
-      .update({
-        content: updates.content,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', noteId);
-
-    if (error) {
-      console.error('Error updating note:', error);
-      return false;
+    const body: Record<string, unknown> = {
+      content: updates.content,
+      updated_at: new Date().toISOString(),
+    };
+    // Only include category if provided and maps cleanly
+    const categoryMap: Record<string, string> = {
+      recommendation: 'info',
+      general: 'info',
+      warning: 'warning',
+      progress: 'progress',
+    };
+    if (updates.category) {
+      const dbCat = categoryMap[updates.category];
+      if (dbCat) body.category = dbCat;
     }
-    return true;
+    const { ok, data } = await adminPatch(`note/${noteId}`, body);
+    if (!ok && typeof data === 'object' && data !== null) {
+      const msg = (data as any).message as string | undefined;
+      if (msg?.includes('category')) {
+        delete body.category;
+        const retry = await adminPatch(`note/${noteId}`, body);
+        return retry.ok;
+      }
+    }
+    return ok;
   },
 
   async deleteNote(noteId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('dietician_notes')
-      .delete()
-      .eq('id', noteId);
-
-    if (error) {
-      console.error('Error deleting note:', error);
-      return false;
-    }
-    return true;
+    return adminDelete(`note/${noteId}`);
   },
 
   // ── Assigned meal plans ────────────────────────────────────────────────────
-  // Read via admin API
   async getAssignedPlansForPatient(patientId: string): Promise<AssignedMealPlan[]> {
     const data = await adminGet(`assigned-plans/${patientId}`);
     return Array.isArray(data) ? data.map(mapAssignedPlan) : [];
@@ -316,9 +369,8 @@ export const db = {
     return Array.isArray(data) ? data.map(mapAssignedPlan) : [];
   },
 
-  // Write via admin API — assigned_meal_plans INSERT policy references profiles (recursive)
   async assignMealPlan(assignment: Omit<AssignedMealPlan, 'id' | 'assignedAt'>): Promise<boolean> {
-    // Step 1: Create meal_plan record (own-user insert, non-recursive RLS — works)
+    // Step 1: Create meal_plan record (own-user insert — non-recursive RLS)
     const { data: planData, error: planError } = await supabase
       .from('meal_plans')
       .insert({
@@ -339,7 +391,7 @@ export const db = {
       return false;
     }
 
-    // Step 2: Assign to patient via admin API (bypasses recursive RLS)
+    // Step 2: Assign via admin API (bypasses recursive RLS on assigned_meal_plans)
     const { ok } = await adminPost('assigned-plans', {
       patient_id: assignment.patientId,
       dietician_id: assignment.dieticianId || null,
@@ -380,56 +432,35 @@ export const db = {
   async getAllProfessionals(): Promise<User[]> {
     const rows = await this._adminFetch('professional');
     return rows.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      email: item.email,
-      role: item.role,
-      phone: item.phone,
-      address: item.address,
-      avatar: item.avatar,
-      createdAt: item.created_at,
-      lastLogin: item.last_login,
+      id: item.id, name: item.name, email: item.email, role: item.role,
+      phone: item.phone, address: item.address, avatar: item.avatar,
+      createdAt: item.created_at, lastLogin: item.last_login,
     }));
   },
 
   async getAllAdmins(): Promise<User[]> {
     const rows = await this._adminFetch('admin');
     return rows.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      email: item.email,
-      role: item.role,
-      phone: item.phone,
-      address: item.address,
-      avatar: item.avatar,
-      createdAt: item.created_at,
-      lastLogin: item.last_login,
+      id: item.id, name: item.name, email: item.email, role: item.role,
+      phone: item.phone, address: item.address, avatar: item.avatar,
+      createdAt: item.created_at, lastLogin: item.last_login,
     }));
   },
 
+  // Update user via admin API (bypasses recursive RLS on profiles UPDATE)
   async updateUser(userId: string, data: Partial<User>): Promise<boolean> {
-    const { error } = await supabase
-      .from('profiles')
-      .update(data)
-      .eq('id', userId);
-
-    if (error) {
-      console.error('Error updating user:', error);
-      return false;
-    }
-    return true;
+    const { ok } = await adminPatch(`user/${userId}`, {
+      name: data.name,
+      email: data.email,
+      role: data.role,
+      phone: data.phone,
+      address: data.address,
+    });
+    return ok;
   },
 
+  // Delete user via admin API (bypasses recursive RLS on profiles DELETE)
   async deleteUser(userId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', userId);
-
-    if (error) {
-      console.error('Error deleting user:', error);
-      return false;
-    }
-    return true;
+    return adminDelete(`user/${userId}`);
   },
 };

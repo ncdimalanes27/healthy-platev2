@@ -26,6 +26,32 @@ async function supabasePost(table: string, body: unknown, serviceKey: string) {
   return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
 }
 
+async function supabasePatch(table: string, filter: string, body: unknown, serviceKey: string) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(body),
+  });
+  return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
+}
+
+async function supabaseDelete(table: string, filter: string, serviceKey: string) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Prefer: 'return=representation',
+    },
+  });
+  return { ok: res.ok, status: res.status };
+}
+
 async function getCaller(authHeader: string | undefined, serviceKey: string) {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const jwt = authHeader.slice(7);
@@ -46,9 +72,7 @@ function readBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let data = '';
     req.on('data', (chunk) => { data += chunk; });
-    req.on('end', () => {
-      try { resolve(JSON.parse(data)); } catch { resolve({}); }
-    });
+    req.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
     req.on('error', () => resolve({}));
   });
 }
@@ -76,7 +100,13 @@ export function adminApiPlugin(): Plugin {
         const param = parts[1];
         const isPro = PROFESSIONAL_ROLES.has(caller.role);
 
-        // ── GET /admin-api/users?role=... ─────────────────────────────────
+        // ── GET /me — any authenticated user gets their own profile row ─────────
+        if (req.method === 'GET' && resource === 'me' && !param) {
+          const data = await supabaseGet(`profiles?select=*&id=eq.${caller.id}&limit=1`, serviceKey);
+          return json(res, Array.isArray(data) ? (data[0] ?? null) : null);
+        }
+
+        // ── GET /users?role=... ───────────────────────────────────────────────
         if (req.method === 'GET' && resource === 'users') {
           if (!isPro) return json(res, { error: 'Forbidden' }, 403);
           const role = url.searchParams.get('role');
@@ -91,23 +121,39 @@ export function adminApiPlugin(): Plugin {
           return json(res, data ?? []);
         }
 
-        // ── GET /admin-api/logs/:userId ────────────────────────────────────
+        // ── PATCH /user/:userId — admin updates a profile ─────────────────────
+        if (req.method === 'PATCH' && resource === 'user' && param) {
+          if (caller.role !== 'admin') return json(res, { error: 'Forbidden' }, 403);
+          const body = await readBody(req);
+          const result = await supabasePatch('profiles', `id=eq.${param}`, body, serviceKey);
+          return json(res, result.data, result.ok ? 200 : 400);
+        }
+
+        // ── DELETE /user/:userId — admin deletes a profile ────────────────────
+        if (req.method === 'DELETE' && resource === 'user' && param) {
+          if (caller.role !== 'admin') return json(res, { error: 'Forbidden' }, 403);
+          const result = await supabaseDelete('profiles', `id=eq.${param}`, serviceKey);
+          return json(res, { ok: result.ok }, result.ok ? 200 : 400);
+        }
+
+        // ── GET /logs/:userId ─────────────────────────────────────────────────
         if (req.method === 'GET' && resource === 'logs' && param) {
           if (caller.id !== param && !isPro) return json(res, { error: 'Forbidden' }, 403);
           const data = await supabaseGet(`daily_logs?user_id=eq.${param}&order=date.desc`, serviceKey);
           return json(res, data ?? []);
         }
 
-        // ── GET /admin-api/health-profile/:userId ─────────────────────────
+        // ── GET /health-profile/:userId ───────────────────────────────────────
         if (req.method === 'GET' && resource === 'health-profile' && param) {
           if (caller.id !== param && !isPro) return json(res, { error: 'Forbidden' }, 403);
           const data = await supabaseGet(`health_profiles?user_id=eq.${param}&limit=1`, serviceKey);
           return json(res, Array.isArray(data) ? (data[0] ?? null) : null);
         }
 
-        // ── GET /admin-api/notes/:patientId ───────────────────────────────
+        // ── GET /notes/:patientId — professionals OR the patient themselves ────
         if (req.method === 'GET' && resource === 'notes' && param) {
-          if (!isPro) return json(res, { error: 'Forbidden' }, 403);
+          const isSelf = caller.id === param;
+          if (!isSelf && !isPro) return json(res, { error: 'Forbidden' }, 403);
           const data = await supabaseGet(
             `dietician_notes?patient_id=eq.${param}&order=created_at.desc`,
             serviceKey,
@@ -115,7 +161,7 @@ export function adminApiPlugin(): Plugin {
           return json(res, data ?? []);
         }
 
-        // ── POST /admin-api/notes ─────────────────────────────────────────
+        // ── POST /notes ───────────────────────────────────────────────────────
         if (req.method === 'POST' && resource === 'notes') {
           if (!isPro) return json(res, { error: 'Forbidden' }, 403);
           const body = await readBody(req);
@@ -123,7 +169,22 @@ export function adminApiPlugin(): Plugin {
           return json(res, result.data, result.ok ? 201 : 400);
         }
 
-        // ── GET /admin-api/assigned-plans/:patientId ──────────────────────
+        // ── PATCH /note/:noteId — update a note ───────────────────────────────
+        if (req.method === 'PATCH' && resource === 'note' && param) {
+          if (!isPro) return json(res, { error: 'Forbidden' }, 403);
+          const body = await readBody(req);
+          const result = await supabasePatch('dietician_notes', `id=eq.${param}`, body, serviceKey);
+          return json(res, result.data, result.ok ? 200 : 400);
+        }
+
+        // ── DELETE /note/:noteId — delete a note ──────────────────────────────
+        if (req.method === 'DELETE' && resource === 'note' && param) {
+          if (!isPro) return json(res, { error: 'Forbidden' }, 403);
+          const result = await supabaseDelete('dietician_notes', `id=eq.${param}`, serviceKey);
+          return json(res, { ok: result.ok }, result.ok ? 200 : 400);
+        }
+
+        // ── GET /assigned-plans/:patientId ────────────────────────────────────
         if (req.method === 'GET' && resource === 'assigned-plans' && param) {
           if (caller.id !== param && !isPro) return json(res, { error: 'Forbidden' }, 403);
           const data = await supabaseGet(
@@ -133,7 +194,7 @@ export function adminApiPlugin(): Plugin {
           return json(res, data ?? []);
         }
 
-        // ── POST /admin-api/assigned-plans ────────────────────────────────
+        // ── POST /assigned-plans ──────────────────────────────────────────────
         if (req.method === 'POST' && resource === 'assigned-plans') {
           if (!isPro) return json(res, { error: 'Forbidden' }, 403);
           const body = await readBody(req);
@@ -141,7 +202,7 @@ export function adminApiPlugin(): Plugin {
           return json(res, result.data, result.ok ? 201 : 400);
         }
 
-        // ── GET /admin-api/professional-plans/:professionalId ─────────────
+        // ── GET /professional-plans/:professionalId ───────────────────────────
         if (req.method === 'GET' && resource === 'professional-plans' && param) {
           if (caller.id !== param && !isPro) return json(res, { error: 'Forbidden' }, 403);
           const data = await supabaseGet(

@@ -107,6 +107,7 @@ export default function App() {
           <Route path="nutritionist/patients" element={<ProtectedRoute allowedRoles={['nutritionist']}><DieticianDashboard /></ProtectedRoute>} />
           <Route path="nutritionist/notes" element={<ProtectedRoute allowedRoles={['nutritionist']}><DieticianNotes /></ProtectedRoute>} />
           <Route path="nutritionist/assign" element={<ProtectedRoute allowedRoles={['nutritionist']}><AssignMealPlan /></ProtectedRoute>} />
+          <Route path="nutritionist/progress" element={<ProtectedRoute allowedRoles={['nutritionist']}><ProgressReport /></ProtectedRoute>} />
           
           {/* Admin routes */}
           <Route path="admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
